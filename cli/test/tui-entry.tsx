@@ -24,7 +24,7 @@ if (mode === 'menu-status') {
   stdin.write('\r');
   await sleep(200);
   const status = lastFrame();
-  out.push(`status screen: ${status.includes('wekyt status') && status.includes('wekyt 0.2.0') ? 'ok' : 'FAIL: ' + JSON.stringify(status)}`);
+  out.push(`status screen: ${status.includes('wekyt status') && /wekyt \d+\.\d+\.\d+/.test(status) ? 'ok' : 'FAIL: ' + JSON.stringify(status)}`);
   stdin.write('x');
   await sleep(100);
   const back = lastFrame();

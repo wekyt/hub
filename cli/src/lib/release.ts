@@ -25,7 +25,7 @@ async function fetchJson(url: string, timeoutMs = 15000): Promise<unknown> {
   try {
     const res = await fetch(url, {
       signal: ctrl.signal,
-      headers: {Accept: 'application/vnd.github+json', 'User-Agent': 'wekyt-cli/0.2.0'},
+      headers: {Accept: 'application/vnd.github+json', 'User-Agent': 'wekyt-cli/0.2.1'},
     });
     if (!res.ok) {
       throw new WekytError(
@@ -121,7 +121,7 @@ export async function downloadToFile(url: string, dest: string, timeoutMs = 6000
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {signal: ctrl.signal, headers: {'User-Agent': 'wekyt-cli/0.2.0'}});
+    const res = await fetch(url, {signal: ctrl.signal, headers: {'User-Agent': 'wekyt-cli/0.2.1'}});
     if (!res.ok || !res.body) {
       throw new WekytError('DOWNLOAD_FAILED', `Download returned ${res.status} for ${url}.`);
     }
@@ -145,7 +145,7 @@ export async function fetchText(url: string, timeoutMs = 15000): Promise<string>
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {signal: ctrl.signal, headers: {'User-Agent': 'wekyt-cli/0.2.0'}});
+    const res = await fetch(url, {signal: ctrl.signal, headers: {'User-Agent': 'wekyt-cli/0.2.1'}});
     if (!res.ok) throw new WekytError('DOWNLOAD_FAILED', `Download returned ${res.status} for ${url}.`);
     return await res.text();
   } finally {

@@ -1,6 +1,6 @@
 {
   "name": "wekyt",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Agent teams that build, maintain, and support software. Zero humans in the loop. CLI for the wekyt hub.",
   "license": "MIT",
   "author": "Wekyt",

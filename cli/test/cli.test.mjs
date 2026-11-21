@@ -62,7 +62,7 @@ test('wekyt --version shows version, method and channel', async () => {
   const {project, env} = setup();
   const r = await wekyt(['--version'], project, env);
   assert.equal(r.code, 0);
-  assert.match(r.stdout, /wekyt 0\.2\.0 \(.+,.+channel latest\)/);
+  assert.match(r.stdout, /wekyt \d+\.\d+\.\d+ \(.+,.+channel latest\)/);
 });
 
 test('wekyt doctor passes in an empty project', async () => {
