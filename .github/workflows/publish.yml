@@ -5,8 +5,11 @@ permissions:
   contents: read
   id-token: write
 jobs:
-  publish:
-    runs-on: ubuntu-latest
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -27,6 +30,26 @@ jobs:
       - name: Test
         working-directory: cli
         run: pnpm test
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+          cache-dependency-path: cli/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: cli
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        working-directory: cli
+        run: pnpm build
       - name: Publish
         working-directory: cli
         run: pnpm publish --access public --provenance --no-git-checks
