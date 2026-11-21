@@ -1,0 +1,105 @@
+name: rollback
+title: Rollback
+version: 0.2.0
+kind: safety
+toolset: safety
+description: >-
+  Revert a merged commit and restore the previous state automatically when
+  a merge fails, post merge checks fail, or a regression is detected after
+  merge. Only the orchestrator may use this tool. It reverts with a new
+  commit: it never rewrites shared history.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      commit:
+        type: string
+        description: SHA of the merged commit to revert.
+      reason:
+        type: string
+        minLength: 1
+        description: "Why the rollback runs: failed merge, failed post merge check, or regression."
+    required:
+      - commit
+      - reason
+    additionalProperties: false
+  outputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      revertedCommit:
+        type: string
+      revertCommit:
+        type: string
+        description: SHA of the new revert commit.
+    required:
+      - revertedCommit
+      - revertCommit
+    additionalProperties: false
+  annotations:
+    readOnlyHint: false
+    destructiveHint: true
+    idempotentHint: false
+    openWorldHint: false
+outputs: >-
+  An object with the reverted commit SHA and the new revert commit SHA. It
+  does not return the reverted diff.
+implementation:
+  implemented: true
+  kind: command
+  argv:
+    - git
+    - revert
+    - --no-edit
+    - <commit>
+  authentication: none
+  timeoutSeconds: 120
+  notes: >-
+    The exact command is `git revert --no-edit <commit>` run in the
+    project root, on the main branch. For a merge commit, -m 1 is added.
+    The revert is itself committed and pushed through the normal flow.
+effects:
+  writes:
+    - A revert commit on the main branch that undoes the merged change.
+  deletes: []
+  externalCalls: []
+  reversible: true
+  idempotent: false
+  notes: Reversible by reverting the revert commit.
+permissions:
+  orchestrator:
+    decision: allow
+    scope: When a merge fails, post merge checks fail, or a regression is detected after merge.
+  architect:
+    decision: deny
+  dev:
+    decision: deny
+  qa:
+    decision: deny
+  security:
+    decision: deny
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: COMMIT_NOT_FOUND
+    when: The commit SHA does not exist in the repo.
+    retryable: false
+    message: Commit not found. Check the SHA against the merge audit entry.
+  - code: REVERT_CONFLICT
+    when: The revert conflicts with later changes.
+    retryable: false
+    message: Revert conflicts with later changes. Resolve it by hand and record the resolution in the audit log.
+  - code: NOTHING_TO_REVERT
+    when: The commit is already reverted.
+    retryable: false
+    message: Commit already reverted. No further rollback is needed.
+examples:
+  - description: The orchestrator rolls back a merge that failed post merge checks.
+    input:
+      commit: 28364c0b1a2b3c4d5e6f708192a3b4c5d6e7f80
+      reason: Post merge checks failed on main.
+    output:
+      revertedCommit: 28364c0b1a2b3c4d5e6f708192a3b4c5d6e7f80
+      revertCommit: 71aa09c4d5e6f708192a3b4c5d6e7f809182736

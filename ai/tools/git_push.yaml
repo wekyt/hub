@@ -1,0 +1,108 @@
+name: git_push
+title: Push branch
+version: 0.2.0
+kind: git
+toolset: git
+description: >-
+  Push the current branch to the remote. It pushes the task branch only and
+  never pushes directly to the main branch. A force push is refused: history
+  on a shared branch is rewritten only through a revert, never by force.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      remote:
+        type: string
+        default: origin
+      branch:
+        type: string
+        description: Branch to push. Defaults to the current branch.
+    additionalProperties: false
+  outputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      remote:
+        type: string
+      branch:
+        type: string
+      pushed:
+        type: boolean
+    required:
+      - remote
+      - branch
+      - pushed
+    additionalProperties: false
+  annotations:
+    readOnlyHint: false
+    destructiveHint: false
+    idempotentHint: true
+    openWorldHint: true
+outputs: >-
+  An object with the remote, the branch, and whether the push happened.
+  It does not return the remote output in full, only the result.
+implementation:
+  implemented: true
+  kind: command
+  argv:
+    - git
+    - push
+    - <remote>
+    - <branch>
+  authentication: git remote credentials configured for the project
+  timeoutSeconds: 120
+  notes: >-
+    The exact command is `git push <remote> <branch>` run in the project
+    root. The handler refuses branch main and refuses --force. Pushing the
+    same branch twice with no new commits is a no-op, so the tool is
+    idempotent.
+effects:
+  writes:
+    - The branch ref on the remote.
+  deletes: []
+  externalCalls:
+    - Push to the configured git remote.
+  reversible: true
+  idempotent: true
+  notes: Reversible by deleting the remote branch, or by pushing a revert.
+permissions:
+  orchestrator:
+    decision: deny
+  architect:
+    decision: deny
+  dev:
+    decision: allow
+  qa:
+    decision: deny
+  security:
+    decision: deny
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: PUSH_TO_MAIN
+    when: The branch to push is main.
+    retryable: false
+    message: Never push directly to main. Push the task branch and open a pull request.
+  - code: FORCE_PUSH_REFUSED
+    when: A force push is requested.
+    retryable: false
+    message: Force push is refused. Rewrite history with a revert instead.
+  - code: REMOTE_REJECTED
+    when: The remote rejects the push, for example because it is behind.
+    retryable: true
+    message: Remote rejected the push. Pull with rebase first, then push again.
+  - code: NO_UPSTREAM
+    when: The branch has no upstream and no remote is configured.
+    retryable: false
+    message: No remote configured. Set the remote for this project first.
+examples:
+  - description: The dev pushes its task branch after committing.
+    input:
+      remote: origin
+      branch: task-123-add-login
+    output:
+      remote: origin
+      branch: task-123-add-login
+      pushed: true

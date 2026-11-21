@@ -1,0 +1,131 @@
+name: run_linter
+title: Run linter
+version: 0.2.0
+kind: test
+toolset: test
+description: >-
+  Run the linter and return violations with file and line. A failing linter
+  blocks the pull request. The command run is the one the project declares
+  in package.json under scripts.lint. When the project declares no linter
+  command, the tool reports not configured instead of inventing a result.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      path:
+        type: string
+        description: Single file or directory to lint, relative to the project root. When omitted, the whole project is linted.
+      timeoutSeconds:
+        type: integer
+        minimum: 10
+        maximum: 1800
+        default: 300
+    additionalProperties: false
+  outputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      passed:
+        type: boolean
+      violations:
+        type: array
+        items:
+          type: object
+          properties:
+            file:
+              type: string
+            line:
+              type: integer
+            column:
+              type: integer
+            rule:
+              type: string
+            message:
+              type: string
+            severity:
+              type: string
+              enum:
+                - error
+                - warning
+          required:
+            - file
+            - line
+            - message
+      command:
+        type: string
+      output:
+        type: string
+    required:
+      - passed
+      - violations
+      - command
+      - output
+    additionalProperties: false
+  annotations:
+    readOnlyHint: false
+    destructiveHint: false
+    idempotentHint: true
+    openWorldHint: false
+outputs: >-
+  An object with the pass or fail verdict, the list of violations (file,
+  line, column, rule, message, severity), the exact command run, and the
+  linter output. It never reports a pass when the linter did not run.
+implementation:
+  implemented: true
+  kind: command
+  argv:
+    - npm
+    - run
+    - lint
+    - --
+  authentication: none
+  timeoutSeconds: 300
+  notes: >-
+    The project declares its linter in package.json scripts.lint; `npm run
+    lint` runs it. path is appended after `--` when given. When
+    scripts.lint is missing, the tool returns TOOL_NOT_CONFIGURED and runs
+    nothing. readOnlyHint is false because a linter may write cache files.
+effects:
+  writes:
+    - Linter cache files, when the linter keeps one.
+  deletes: []
+  externalCalls: []
+  reversible: true
+  idempotent: true
+permissions:
+  orchestrator:
+    decision: deny
+  architect:
+    decision: deny
+  dev:
+    decision: allow
+  qa:
+    decision: allow
+  security:
+    decision: deny
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: TOOL_NOT_CONFIGURED
+    when: The project declares no linter command in package.json scripts.lint.
+    retryable: false
+    message: No linter configured. Add scripts.lint to package.json, or declare the linter in the architecture.
+  - code: LINT_FAILED
+    when: The linter exits non-zero or reports violations at error severity.
+    retryable: false
+    message: Lint failed. Fix the listed violations and run the linter again.
+  - code: LINT_TIMEOUT
+    when: The run takes longer than timeoutSeconds.
+    retryable: true
+    message: Lint timed out. Lint a single directory, or raise timeoutSeconds.
+examples:
+  - description: The dev lints the files it changed before opening a pull request.
+    input:
+      path: src/lib
+    output:
+      passed: true
+      violations: []
+      command: npm run lint -- src/lib
+      output: ""

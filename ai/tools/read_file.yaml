@@ -1,0 +1,107 @@
+name: read_file
+title: Read file
+version: 0.2.0
+kind: read
+toolset: read
+description: >-
+  Read the contents of a file in the repository and return it as text.
+  Use it before deciding anything about existing code, and to verify what
+  a file actually contains instead of assuming it. It never modifies state:
+  it reads only, and it refuses paths outside the project root.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      path:
+        type: string
+        description: Path relative to the project root, for example src/lib/team.ts.
+      maxChars:
+        type: integer
+        minimum: 1
+        maximum: 1000000
+        default: 200000
+        description: Maximum characters to return. Longer files are truncated and marked as such.
+    required:
+      - path
+    additionalProperties: false
+  outputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      path:
+        type: string
+      content:
+        type: string
+      bytes:
+        type: integer
+      truncated:
+        type: boolean
+    required:
+      - path
+      - content
+      - bytes
+      - truncated
+    additionalProperties: false
+  annotations:
+    readOnlyHint: true
+    destructiveHint: false
+    idempotentHint: true
+    openWorldHint: false
+outputs: >-
+  An object with the file path, its text content, its byte size, and whether
+  the content was truncated at maxChars. It never returns binary content:
+  a binary file is reported as an error instead of being dumped as text.
+implementation:
+  implemented: true
+  kind: script
+  runtime: node:fs
+  handler: >-
+    Resolve the path inside the project root, reject absolute paths and
+    paths that escape the root through .. or symlinks, then read with
+    fs.readFileSync(path, 'utf8'). Files larger than maxChars are truncated
+    and flagged. Binary content (NUL byte in the first 8 KB) is rejected.
+  authentication: none
+  timeoutSeconds: 30
+effects:
+  writes: []
+  deletes: []
+  externalCalls: []
+  reversible: true
+  idempotent: true
+permissions:
+  orchestrator:
+    decision: allow
+  architect:
+    decision: allow
+  dev:
+    decision: allow
+  qa:
+    decision: allow
+  security:
+    decision: allow
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: FILE_NOT_FOUND
+    when: The path does not exist in the project.
+    retryable: false
+    message: File not found. Check the path against the repo tree and try again.
+  - code: PATH_OUTSIDE_PROJECT
+    when: The path is absolute or escapes the project root.
+    retryable: false
+    message: Path outside the project root. Use a path inside the project.
+  - code: BINARY_FILE
+    when: The file contains binary content.
+    retryable: false
+    message: File is binary. Read it with a tool that understands its format.
+examples:
+  - description: Read an agent file before delegating work to that role.
+    input:
+      path: ai/agents/dev.md
+    output:
+      path: ai/agents/dev.md
+      bytes: 1840
+      truncated: false
+      content: "---\nname: dev\n..."

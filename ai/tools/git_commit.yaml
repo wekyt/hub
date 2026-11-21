@@ -1,0 +1,104 @@
+name: git_commit
+title: Commit changes
+version: 0.2.0
+kind: git
+toolset: git
+description: >-
+  Commit staged changes on the current branch with a clear message. It
+  commits only what is already staged: staging is a separate, deliberate
+  step, so nothing is committed by accident. Every fix for a QA or security
+  finding references the finding id in the message.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      message:
+        type: string
+        minLength: 1
+        description: Commit message. References the finding id when the commit fixes a QA or security finding.
+      amend:
+        type: boolean
+        default: false
+        description: Amend the previous commit instead of creating a new one. Only on a branch that has not been pushed yet.
+    required:
+      - message
+    additionalProperties: false
+  outputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      commit:
+        type: string
+        description: Full SHA of the new commit.
+      branch:
+        type: string
+    required:
+      - commit
+      - branch
+    additionalProperties: false
+  annotations:
+    readOnlyHint: false
+    destructiveHint: false
+    idempotentHint: false
+    openWorldHint: false
+outputs: >-
+  An object with the new commit SHA and the branch it was created on. It
+  does not return the diff.
+implementation:
+  implemented: true
+  kind: command
+  argv:
+    - git
+    - commit
+    - -m
+    - <message>
+  authentication: none
+  timeoutSeconds: 60
+  notes: >-
+    The exact command is `git commit -m <message>` run in the project
+    root, or `git commit --amend -m <message>` when amend is true. Only
+    staged changes are committed. Amend is refused on a branch that has
+    already been pushed.
+effects:
+  writes:
+    - A new commit object on the current branch.
+  deletes: []
+  externalCalls: []
+  reversible: true
+  idempotent: false
+  notes: Reversible with `git reset --soft HEAD~1` before push, or `git revert` after push.
+permissions:
+  orchestrator:
+    decision: deny
+  architect:
+    decision: deny
+  dev:
+    decision: allow
+  qa:
+    decision: deny
+  security:
+    decision: deny
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: NOTHING_TO_COMMIT
+    when: Nothing is staged.
+    retryable: false
+    message: Nothing staged to commit. Stage the intended files first.
+  - code: ON_MAIN_BRANCH
+    when: The current branch is main.
+    retryable: false
+    message: Never commit directly on main. Create a task branch first.
+  - code: AMEND_AFTER_PUSH
+    when: amend is true but the branch has already been pushed.
+    retryable: false
+    message: Cannot amend after push. Create a new commit instead.
+examples:
+  - description: The dev commits a fix that answers a QA finding.
+    input:
+      message: Fix login validation (QA-14)
+    output:
+      commit: 9f2c1a7b4e8d3c2a1b0f6e5d4c3b2a190807060
+      branch: task-123-add-login

@@ -1,0 +1,138 @@
+name: search_code
+title: Search code
+version: 0.2.0
+kind: search
+toolset: read
+description: >-
+  Search the codebase by text, symbol, or file pattern and return matching
+  lines with file and line number. Use it to understand existing code before
+  planning, building, or reviewing. It is read only and never modifies
+  state, and it searches only inside the project root.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      query:
+        type: string
+        minLength: 1
+        description: Text or regular expression to search for.
+      filePattern:
+        type: string
+        description: Glob that limits which files are searched, for example "src/**/*.ts".
+      caseSensitive:
+        type: boolean
+        default: false
+      maxResults:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 50
+    required:
+      - query
+    additionalProperties: false
+  outputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      query:
+        type: string
+      matches:
+        type: array
+        items:
+          type: object
+          properties:
+            file:
+              type: string
+            line:
+              type: integer
+            text:
+              type: string
+          required:
+            - file
+            - line
+            - text
+      truncated:
+        type: boolean
+    required:
+      - query
+      - matches
+      - truncated
+    additionalProperties: false
+  annotations:
+    readOnlyHint: true
+    destructiveHint: false
+    idempotentHint: true
+    openWorldHint: false
+outputs: >-
+  An object with the query, a list of matches (file, line, matching text),
+  and whether the list was truncated at maxResults. It returns matching
+  lines only, never whole files.
+implementation:
+  implemented: true
+  kind: command
+  argv:
+    - rg
+    - --no-heading
+    - --line-number
+    - --max-count
+    - "50"
+    - <query>
+  fallback:
+    kind: command
+    argv:
+      - grep
+      - -rn
+      - <query>
+    when: rg is not installed.
+  authentication: none
+  timeoutSeconds: 60
+  notes: >-
+    The primary command is ripgrep (rg) when installed, with --glob for
+    filePattern and -i unless caseSensitive is true. The fallback is grep
+    -rn. The search runs inside the project root only.
+effects:
+  writes: []
+  deletes: []
+  externalCalls: []
+  reversible: true
+  idempotent: true
+permissions:
+  orchestrator:
+    decision: allow
+  architect:
+    decision: allow
+  dev:
+    decision: allow
+  qa:
+    decision: allow
+  security:
+    decision: allow
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: INVALID_PATTERN
+    when: The query is not a valid regular expression.
+    retryable: false
+    message: Invalid search pattern. Fix the regular expression and try again.
+  - code: NO_MATCHES
+    when: Nothing in the project matches the query.
+    retryable: false
+    message: No matches. Broaden the query or check the file pattern.
+  - code: SEARCH_TIMEOUT
+    when: The search takes longer than timeoutSeconds.
+    retryable: true
+    message: Search timed out. Narrow the file pattern and try again.
+examples:
+  - description: Find every use of a tool id before changing its definition.
+    input:
+      query: merge_pull_request
+      filePattern: ai/**/*.md
+    output:
+      query: merge_pull_request
+      matches:
+        - file: ai/agents/orchestrator.md
+          line: 12
+          text: "  - merge_pull_request"
+      truncated: false

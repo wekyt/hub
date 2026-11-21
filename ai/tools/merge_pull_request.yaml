@@ -1,0 +1,128 @@
+name: merge_pull_request
+title: Merge pull request
+version: 0.2.0
+kind: git
+toolset: git
+description: >-
+  Merge an approved pull request into the main branch. Only the merge step
+  of the orchestrator may use this tool, and only when architect, dev, QA
+  with tests green, and security all agree. Partial agreement is not
+  enough. A merge without an audit entry written before it runs is
+  forbidden, and the audit entry must record the agreement of every layer.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      number:
+        type: integer
+        minimum: 1
+        description: Pull request number to merge.
+      method:
+        type: string
+        enum:
+          - merge
+          - squash
+          - rebase
+        default: merge
+    required:
+      - number
+    additionalProperties: false
+  outputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      merged:
+        type: boolean
+      sha:
+        type: string
+        description: SHA of the merge commit on the base branch.
+      number:
+        type: integer
+    required:
+      - merged
+      - sha
+      - number
+    additionalProperties: false
+  annotations:
+    readOnlyHint: false
+    destructiveHint: true
+    idempotentHint: false
+    openWorldHint: true
+outputs: >-
+  An object with whether the merge happened, the merge commit SHA, and the
+  pull request number. It does not return the merged diff.
+implementation:
+  implemented: true
+  kind: api
+  method: PUT
+  url: https://api.github.com/repos/{owner}/{repo}/pulls/{number}/merge
+  fallback:
+    kind: command
+    argv:
+      - gh
+      - pr
+      - merge
+      - <number>
+      - --merge
+    when: The gh CLI is installed and authenticated.
+  authentication: gh CLI session, or a GITHUB_TOKEN environment variable with repo scope
+  timeoutSeconds: 60
+  preconditions:
+    - All layers agreed: architect, dev, QA with tests green, and security.
+    - An audit_log entry recording that agreement was written before the merge runs.
+  notes: >-
+    owner and repo come from the project git remote. The API call sends
+    merge_method. The merge step always uses a merge commit, never squash
+    or rebase, unless the architecture says otherwise for that project.
+effects:
+  writes:
+    - A merge commit on the main branch.
+  deletes: []
+  externalCalls:
+    - PUT to the GitHub REST API, or gh pr merge.
+  reversible: true
+  idempotent: false
+  notes: Reversible with the rollback tool, which reverts the merge commit.
+permissions:
+  orchestrator:
+    decision: allow
+    scope: Merge step only, and only when architect, dev, QA with tests green, and security all agree. Partial agreement is not enough.
+  architect:
+    decision: deny
+  dev:
+    decision: deny
+    scope: Dev cannot merge. It must never ask another agent to merge outside the orchestrator merge step.
+  qa:
+    decision: deny
+  security:
+    decision: deny
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: NOT_AUTHENTICATED
+    when: Neither gh nor GITHUB_TOKEN provides GitHub authentication.
+    retryable: false
+    message: Not authenticated with GitHub. Run `gh auth login`, or set GITHUB_TOKEN.
+  - code: LAYERS_NOT_AGREED
+    when: Any layer has not agreed, or QA tests are not green.
+    retryable: false
+    message: Not all layers agreed. Return the work to the layer that disagrees instead of merging.
+  - code: NO_AUDIT_ENTRY
+    when: No audit_log entry for this merge exists before the call.
+    retryable: false
+    message: A merge without an audit entry is forbidden. Write the audit entry first.
+  - code: MERGE_CONFLICT
+    when: The pull request cannot be merged cleanly.
+    retryable: false
+    message: Merge conflict. Return the branch to the dev to resolve it.
+examples:
+  - description: The orchestrator merge step merges an approved pull request.
+    input:
+      number: 114
+      method: merge
+    output:
+      merged: true
+      sha: 28364c0b1a2b3c4d5e6f708192a3b4c5d6e7f80
+      number: 114

@@ -1,0 +1,142 @@
+name: run_checker
+title: Run checker
+version: 0.2.0
+kind: test
+toolset: test
+description: >-
+  Run the static checker, including type checks and security checks, and
+  return findings with file and line. The command run is the one the
+  project declares in package.json, scripts.check first and scripts.typecheck
+  second. When the project declares neither, the tool reports not configured
+  instead of inventing a result.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      path:
+        type: string
+        description: Single file or directory to check, relative to the project root. When omitted, the whole project is checked.
+      checks:
+        type: array
+        items:
+          type: string
+          enum:
+            - typecheck
+            - security
+        description: Which checks to run. When omitted, the project default runs.
+      timeoutSeconds:
+        type: integer
+        minimum: 10
+        maximum: 1800
+        default: 300
+    additionalProperties: false
+  outputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      passed:
+        type: boolean
+      findings:
+        type: array
+        items:
+          type: object
+          properties:
+            file:
+              type: string
+            line:
+              type: integer
+            check:
+              type: string
+            message:
+              type: string
+            severity:
+              type: string
+              enum:
+                - blocking
+                - high
+                - medium
+                - low
+          required:
+            - file
+            - message
+      command:
+        type: string
+      output:
+        type: string
+    required:
+      - passed
+      - findings
+      - command
+      - output
+    additionalProperties: false
+  annotations:
+    readOnlyHint: false
+    destructiveHint: false
+    idempotentHint: true
+    openWorldHint: false
+outputs: >-
+  An object with the pass or fail verdict, the list of findings (file, line,
+  check, message, severity), the exact command run, and the checker output.
+  It never reports a pass when the checker did not run.
+implementation:
+  implemented: true
+  kind: command
+  argv:
+    - npm
+    - run
+    - check
+    - --
+  authentication: none
+  timeoutSeconds: 300
+  notes: >-
+    Resolution order: package.json scripts.check, then scripts.typecheck.
+    When neither exists, the tool returns TOOL_NOT_CONFIGURED and runs
+    nothing. The checks input selects a subset only when the declared
+    command supports it; otherwise the full declared command runs.
+    readOnlyHint is false because a checker may write cache files.
+effects:
+  writes:
+    - Checker cache files, when the checker keeps one.
+  deletes: []
+  externalCalls: []
+  reversible: true
+  idempotent: true
+permissions:
+  orchestrator:
+    decision: deny
+  architect:
+    decision: deny
+  dev:
+    decision: allow
+  qa:
+    decision: allow
+  security:
+    decision: allow
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: TOOL_NOT_CONFIGURED
+    when: The project declares neither scripts.check nor scripts.typecheck.
+    retryable: false
+    message: No checker configured. Add scripts.check or scripts.typecheck to package.json, or declare the checker in the architecture.
+  - code: CHECK_FAILED
+    when: The checker exits non-zero or reports findings at blocking severity.
+    retryable: false
+    message: Check failed. Fix the listed findings and run the checker again.
+  - code: CHECK_TIMEOUT
+    when: The run takes longer than timeoutSeconds.
+    retryable: true
+    message: Check timed out. Check a single directory, or raise timeoutSeconds.
+examples:
+  - description: Security runs the checker on a pull request branch.
+    input:
+      checks:
+        - typecheck
+        - security
+    output:
+      passed: true
+      findings: []
+      command: npm run check
+      output: ""

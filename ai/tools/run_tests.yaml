@@ -1,0 +1,131 @@
+name: run_tests
+title: Run tests
+version: 0.2.0
+kind: test
+toolset: test
+description: >-
+  Run the test suite or a selected test file and return pass or fail with
+  output. It is the objective gate for QA and the local check for the dev.
+  The command run is the one the project declares in package.json under
+  scripts.test. When the project declares no test command, the tool reports
+  not configured instead of inventing a result.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      testPath:
+        type: string
+        description: Single test file to run, relative to the project root. When omitted, the whole suite runs.
+      filter:
+        type: string
+        description: Name filter passed to the test runner.
+      timeoutSeconds:
+        type: integer
+        minimum: 10
+        maximum: 3600
+        default: 600
+    additionalProperties: false
+  outputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      passed:
+        type: boolean
+      passedCount:
+        type: integer
+      failedCount:
+        type: integer
+      skippedCount:
+        type: integer
+      durationMs:
+        type: integer
+      command:
+        type: string
+      output:
+        type: string
+    required:
+      - passed
+      - command
+      - output
+    additionalProperties: false
+  annotations:
+    readOnlyHint: false
+    destructiveHint: false
+    idempotentHint: true
+    openWorldHint: false
+outputs: >-
+  An object with the pass or fail verdict, counts of passed, failed and
+  skipped tests, the duration, the exact command run, and the runner
+  output. It never reports a pass when the runner did not run.
+implementation:
+  implemented: true
+  kind: command
+  argv:
+    - npm
+    - test
+    - --
+  authentication: none
+  timeoutSeconds: 600
+  notes: >-
+    The project declares its test command in package.json scripts.test;
+    `npm test` runs it. testPath and filter are appended after `--` when
+    given. When scripts.test is missing, the tool returns
+    TOOL_NOT_CONFIGURED and runs nothing. The runner may write temporary
+    files or coverage reports, which is why readOnlyHint is false.
+effects:
+  writes:
+    - Temporary test files and coverage reports produced by the runner.
+  deletes: []
+  externalCalls: []
+  reversible: true
+  idempotent: true
+permissions:
+  orchestrator:
+    decision: deny
+  architect:
+    decision: deny
+  dev:
+    decision: allow
+  qa:
+    decision: allow
+  security:
+    decision: deny
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: TOOL_NOT_CONFIGURED
+    when: The project declares no test command in package.json scripts.test.
+    retryable: false
+    message: No test command configured. Add scripts.test to package.json, or declare another runner in the architecture.
+  - code: TESTS_FAILED
+    when: The runner exits non-zero or reports failures.
+    retryable: false
+    message: Tests failed. Read the output, fix the failing tests, and run them again.
+  - code: TEST_TIMEOUT
+    when: The run takes longer than timeoutSeconds.
+    retryable: true
+    message: Tests timed out. Run a single test file, or raise timeoutSeconds.
+examples:
+  - description: QA runs the whole suite as the objective gate.
+    input: {}
+    output:
+      passed: true
+      passedCount: 42
+      failedCount: 0
+      skippedCount: 0
+      durationMs: 8312
+      command: npm test
+      output: "42 passing"
+  - description: The dev runs one test file after a fix.
+    input:
+      testPath: test/team.test.mjs
+    output:
+      passed: true
+      passedCount: 6
+      failedCount: 0
+      skippedCount: 0
+      durationMs: 940
+      command: npm test -- test/team.test.mjs
+      output: "6 passing"

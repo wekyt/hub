@@ -1,0 +1,121 @@
+name: write_file
+title: Write file
+version: 0.2.0
+kind: write
+toolset: write
+description: >-
+  Create or overwrite a file in the repository with the given text content.
+  Only the architect and the dev may use it, each within a narrow scope:
+  the architect writes only architecture documents, the dev writes only
+  files listed in the approved architecture. Overwriting destroys the
+  previous content, so it is not reversible except through git history.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      path:
+        type: string
+        description: Path relative to the project root, for example src/lib/team.ts.
+      content:
+        type: string
+        description: Full text content to write. The file is replaced, not appended to.
+      mode:
+        type: string
+        enum:
+          - create
+          - overwrite
+        default: overwrite
+        description: create fails if the file already exists; overwrite replaces it.
+    required:
+      - path
+      - content
+    additionalProperties: false
+  outputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      path:
+        type: string
+      bytes:
+        type: integer
+      created:
+        type: boolean
+    required:
+      - path
+      - bytes
+      - created
+    additionalProperties: false
+  annotations:
+    readOnlyHint: false
+    destructiveHint: true
+    idempotentHint: true
+    openWorldHint: false
+outputs: >-
+  An object with the file path, the bytes written, and whether the file was
+  newly created. It does not return the written content back.
+implementation:
+  implemented: true
+  kind: script
+  runtime: node:fs
+  handler: >-
+    Resolve the path inside the project root, reject absolute paths and
+    paths that escape the root through .. or symlinks, create parent
+    directories with fs.mkdirSync(path, {recursive: true}), then write with
+    fs.writeFileSync(path, content, 'utf8'). In create mode, fail with
+    FILE_EXISTS when the file is already present.
+  authentication: none
+  timeoutSeconds: 30
+effects:
+  writes:
+    - The file at the given path, created or overwritten.
+  deletes: []
+  externalCalls: []
+  reversible: false
+  idempotent: true
+  notes: >-
+    Repeating the call with the same content leaves the same file. The
+    previous content is only recoverable from git history, so a write is
+    not reversible on its own.
+permissions:
+  orchestrator:
+    decision: deny
+    scope: The orchestrator never writes code. It delegates every code change to the dev.
+  architect:
+    decision: allow
+    scope: Architecture documents and design notes only. Never production code, test code, or build configuration.
+  dev:
+    decision: allow
+    scope: Files listed in the approved architecture only. Never files listed as untouched without a revised architecture.
+  qa:
+    decision: deny
+    scope: QA never writes code. Its job is to test and prove, not to repair.
+  security:
+    decision: deny
+    scope: Security never writes code. It reports the fix required and returns the task to the dev.
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: FILE_EXISTS
+    when: mode is create and the file already exists.
+    retryable: false
+    message: File already exists. Use mode overwrite, or pick another path.
+  - code: PATH_OUTSIDE_PROJECT
+    when: The path is absolute or escapes the project root.
+    retryable: false
+    message: Path outside the project root. Use a path inside the project.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to write this file, or the scope forbids it.
+    retryable: false
+    message: This role may not write that file. Ask the orchestrator to delegate it to a role that may.
+examples:
+  - description: The dev writes a module listed in the approved architecture.
+    input:
+      path: src/lib/team.ts
+      content: "import * as fs from 'node:fs';\n"
+      mode: overwrite
+    output:
+      path: src/lib/team.ts
+      bytes: 33
+      created: false

@@ -1,0 +1,104 @@
+name: git_branch
+title: Create branch
+version: 0.2.0
+kind: git
+toolset: git
+description: >-
+  Create a git branch for a task and switch to it. Branch names follow the
+  task id. It never switches to or modifies the main branch directly, and
+  it never creates a branch named main. The branch starts at the given base,
+  which defaults to main.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      name:
+        type: string
+        pattern: ^[A-Za-z0-9][A-Za-z0-9._/-]*$
+        description: Branch name, usually the task id, for example task-123-add-login.
+      base:
+        type: string
+        default: main
+        description: Branch or commit the new branch starts at.
+    required:
+      - name
+    additionalProperties: false
+  outputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      branch:
+        type: string
+      base:
+        type: string
+    required:
+      - branch
+      - base
+    additionalProperties: false
+  annotations:
+    readOnlyHint: false
+    destructiveHint: false
+    idempotentHint: false
+    openWorldHint: false
+outputs: >-
+  An object with the created branch name and the base it started at. It
+  does not return the branch list.
+implementation:
+  implemented: true
+  kind: command
+  argv:
+    - git
+    - checkout
+    - -b
+    - <name>
+    - <base>
+  authentication: none
+  timeoutSeconds: 60
+  notes: >-
+    The exact command is `git checkout -b <name> <base>` run in the project
+    root. Creating a branch that already exists fails instead of switching
+    to it.
+effects:
+  writes:
+    - A new local branch ref, and the working tree switched to it.
+  deletes: []
+  externalCalls: []
+  reversible: true
+  idempotent: false
+  notes: Reversible with `git checkout <previous> && git branch -D <name>`.
+permissions:
+  orchestrator:
+    decision: allow
+  architect:
+    decision: deny
+  dev:
+    decision: allow
+  qa:
+    decision: deny
+  security:
+    decision: deny
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: BRANCH_EXISTS
+    when: A branch with that name already exists.
+    retryable: false
+    message: Branch already exists. Use the existing branch, or pick another name.
+  - code: INVALID_BRANCH_NAME
+    when: The name does not match the required pattern, or is main.
+    retryable: false
+    message: Invalid branch name. Use the task id with lowercase letters, digits, hyphens, dots or slashes.
+  - code: DIRTY_TREE
+    when: Uncommitted changes would be carried to the new branch in a conflicting way.
+    retryable: false
+    message: Working tree has uncommitted changes. Commit or stash them first.
+examples:
+  - description: The dev starts work on a task branch from main.
+    input:
+      name: task-123-add-login
+      base: main
+    output:
+      branch: task-123-add-login
+      base: main

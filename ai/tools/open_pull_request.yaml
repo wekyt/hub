@@ -1,0 +1,135 @@
+name: open_pull_request
+title: Open pull request
+version: 0.2.0
+kind: git
+toolset: git
+description: >-
+  Open a pull request from a branch with a description, the changed files,
+  and test evidence. QA is explicitly forbidden from using this tool even
+  though it exists in the registry: when QA finds a fixable problem, it
+  reports the finding and returns the task to the dev through the
+  orchestrator. It never opens a pull request itself.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      title:
+        type: string
+        minLength: 1
+      body:
+        type: string
+        description: Description with what changed, the changed files, and test evidence.
+      head:
+        type: string
+        description: Branch the pull request comes from.
+      base:
+        type: string
+        default: main
+        description: Branch the pull request merges into.
+    required:
+      - title
+      - body
+      - head
+    additionalProperties: false
+  outputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      number:
+        type: integer
+      url:
+        type: string
+      head:
+        type: string
+      base:
+        type: string
+    required:
+      - number
+      - url
+      - head
+      - base
+    additionalProperties: false
+  annotations:
+    readOnlyHint: false
+    destructiveHint: false
+    idempotentHint: false
+    openWorldHint: true
+outputs: >-
+  An object with the pull request number, its URL, and the head and base
+  branches. It does not return the full pull request body.
+implementation:
+  implemented: true
+  kind: api
+  method: POST
+  url: https://api.github.com/repos/{owner}/{repo}/pulls
+  fallback:
+    kind: command
+    argv:
+      - gh
+      - pr
+      - create
+      - --title
+      - <title>
+      - --body
+      - <body>
+      - --head
+      - <head>
+      - --base
+      - <base>
+    when: The gh CLI is installed and authenticated.
+  authentication: gh CLI session, or a GITHUB_TOKEN environment variable with repo scope
+  timeoutSeconds: 60
+  notes: >-
+    owner and repo come from the project git remote. The API call sends
+    title, body, head and base as JSON. A second call with the same head
+    returns the existing pull request instead of creating a duplicate.
+effects:
+  writes:
+    - A new pull request on GitHub.
+  deletes: []
+  externalCalls:
+    - POST to the GitHub REST API, or gh pr create.
+  reversible: true
+  idempotent: false
+  notes: Reversible by closing the pull request without merging it.
+permissions:
+  orchestrator:
+    decision: allow
+  architect:
+    decision: deny
+  dev:
+    decision: allow
+  qa:
+    decision: deny
+    scope: QA cannot open a pull request. It reports the finding and returns the task to the dev through the orchestrator.
+  security:
+    decision: deny
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: NOT_AUTHENTICATED
+    when: Neither gh nor GITHUB_TOKEN provides GitHub authentication.
+    retryable: false
+    message: Not authenticated with GitHub. Run `gh auth login`, or set GITHUB_TOKEN.
+  - code: PR_EXISTS
+    when: A pull request already exists for this head branch.
+    retryable: false
+    message: A pull request already exists for this branch. Use the existing one.
+  - code: BASE_NOT_FOUND
+    when: The base branch does not exist on the remote.
+    retryable: false
+    message: Base branch not found on the remote. Check the base name.
+examples:
+  - description: The dev opens a pull request with test evidence.
+    input:
+      title: Add login validation
+      body: "Adds validation to the login form. Tests: 42 passing."
+      head: task-123-add-login
+      base: main
+    output:
+      number: 114
+      url: https://github.com/wekyt/hub/pull/114
+      head: task-123-add-login
+      base: main

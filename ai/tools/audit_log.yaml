@@ -1,0 +1,126 @@
+name: audit_log
+title: Audit log
+version: 0.2.0
+kind: safety
+toolset: safety
+description: >-
+  Append an audit entry recording a decision, delegation, approval,
+  rejection, merge, or rollback, with task id, actor, evidence, and
+  timestamp. Every agent uses this tool. The log is append only: no agent
+  can edit or delete an audit entry, and a merge without an audit entry
+  written before it runs is forbidden.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      taskId:
+        type: string
+        minLength: 1
+        description: Task the entry belongs to.
+      actor:
+        type: string
+        enum:
+          - orchestrator
+          - architect
+          - dev
+          - qa
+          - security
+          - judge
+        description: Role writing the entry.
+      action:
+        type: string
+        enum:
+          - decision
+          - delegation
+          - approval
+          - rejection
+          - merge
+          - rollback
+        description: What happened.
+      evidence:
+        type: string
+        minLength: 1
+        description: "Evidence for the entry: test output, file and line, or the agreement of every layer."
+      details:
+        type: string
+        description: Extra context, kept short.
+    required:
+      - taskId
+      - actor
+      - action
+      - evidence
+    additionalProperties: false
+  outputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      path:
+        type: string
+      bytes:
+        type: integer
+    required:
+      - path
+      - bytes
+    additionalProperties: false
+  annotations:
+    readOnlyHint: false
+    destructiveHint: false
+    idempotentHint: false
+    openWorldHint: false
+outputs: >-
+  An object with the log path (ai/audit.log) and the bytes appended. It
+  does not return the full log. Each call appends exactly one line, so
+  repeating a call writes a second line: the tool is not idempotent.
+implementation:
+  implemented: true
+  kind: script
+  runtime: node:fs
+  handler: >-
+    Append one JSON line to ai/audit.log with fs.appendFileSync, with
+    taskId, actor, action, evidence, details, and an ISO timestamp. Create
+    ai/audit.log when it does not exist. Never open the file for writing in
+    any other mode, and never truncate it.
+  authentication: none
+  timeoutSeconds: 10
+effects:
+  writes:
+    - One JSON line appended to ai/audit.log.
+  deletes: []
+  externalCalls: []
+  reversible: false
+  idempotent: false
+  notes: The log is append only. An entry cannot be edited or deleted.
+permissions:
+  orchestrator:
+    decision: allow
+  architect:
+    decision: allow
+  dev:
+    decision: allow
+  qa:
+    decision: allow
+  security:
+    decision: allow
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: LOG_WRITE_FAILED
+    when: ai/audit.log cannot be appended to, for example when the ai/ folder is missing or read only.
+    retryable: true
+    message: Could not write the audit log. Check that ai/ exists and is writable, then try again.
+  - code: INVALID_ACTION
+    when: The action is not one of the six recorded actions.
+    retryable: false
+    message: Invalid audit action. Use decision, delegation, approval, rejection, merge, or rollback.
+examples:
+  - description: The orchestrator records that all layers agreed to merge.
+    input:
+      taskId: task-123
+      actor: orchestrator
+      action: approval
+      evidence: Architect, dev, QA with tests green, and security agreed to merge PR 114.
+    output:
+      path: ai/audit.log
+      bytes: 214
