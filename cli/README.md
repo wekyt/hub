@@ -16,6 +16,12 @@ To install the CLI itself, so `wekyt` works without npx:
 npm install -g wekyt
 ```
 
+or, with pnpm:
+
+```bash
+pnpm add -g wekyt
+```
+
 To install only the team, without Node, use the curl installer from the hub README instead.
 
 ## Commands
@@ -27,8 +33,8 @@ All commands run in the current project folder, unless `--project <dir>` is give
 | `wekyt` | Open the interactive menu (install, update, status, update CLI, uninstall, exit). Needs a terminal. |
 | `wekyt install` | Install the dev team into `./ai/` from the latest GitHub release, SHA-256 verified. Refuses when `ai/` exists, unless `--force`. `--tag vX.Y.Z` pins a release. |
 | `wekyt update` | Update the installed team to the latest release of the channel. `--check` only reports versions. `--channel latest` or `--channel stable` picks the channel. `--rollback` restores the previous saved copy of `ai/`. |
-| `wekyt update --self` | Update the CLI itself with `npm install -g wekyt@latest`. This is a different update from `wekyt update`, which updates the team. |
-| `wekyt --version` | Show CLI version, install method (npm, curl, or local) and channel. |
+| `wekyt update --self` | Update the CLI itself with `npm install -g wekyt@latest`, or `pnpm add -g wekyt@latest` when it was installed with pnpm. This is a different update from `wekyt update`, which updates the team. |
+| `wekyt --version` | Show CLI version, install method (npm, pnpm, curl, or local) and channel. |
 | `wekyt doctor` | Check Node >= 22.12, curl, tar, the installed team, and update state. |
 | `wekyt uninstall` | Remove `./ai/`, with confirmation unless `--yes`. Nothing outside `ai/` is touched. |
 
@@ -51,14 +57,18 @@ Test overrides, same names as `install.sh` uses:
 
 ## Development
 
+This project uses pnpm (pinned in `package.json` as `packageManager`). Install it with `corepack enable` or from https://pnpm.io/installation, then:
+
 ```bash
-npm install
-npm run build    # esbuild bundles src/cli.tsx into dist/wekyt.js, one file
-npm test         # CLI integration tests, tools validation tests, TUI tests
-npm run typecheck
-npm run tools:validate          # validate ai/tools/*.yaml
-npm run tools:generate          # validate and regenerate tools.json and the permissions matrix
+pnpm install
+pnpm build    # esbuild bundles src/cli.tsx into dist/wekyt.js, one file
+pnpm test         # CLI integration tests, tools validation tests, TUI tests
+pnpm typecheck
+pnpm tools:validate          # validate ai/tools/*.yaml
+pnpm tools:generate          # validate and regenerate tools.json and the permissions matrix
 ```
+
+pnpm 10 blocks install scripts of dependencies by default. That is intentional: esbuild works without its postinstall script because its platform binary arrives as an optional dependency. Do not approve builds unless a dependency genuinely needs its script, and record why.
 
 The bundle is ESM in a single file. Ink 8 needs top-level await, so a CJS bundle is not possible; the `signal-exit` CJS entry is aliased to a minimal shim in `src/lib/signal-exit-shim.mjs` because esbuild cannot bundle its `require('assert')` into ESM output, and the bundle defines `require` through `createRequire` for the remaining CJS dependencies that call it at runtime. Both workarounds are commented where they live.
 

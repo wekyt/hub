@@ -4,6 +4,7 @@ import SelectInput from 'ink-select-input';
 import Spinner from 'ink-spinner';
 import {
   doctor,
+  detectInstallMethod,
   installTeam,
   installedVersion,
   statusLines,
@@ -98,9 +99,10 @@ export function App({projectDir}: {projectDir: string}): React.ReactElement {
             : `Updated team ${before || 'none'} -> ${r.version} (${r.files} files in ./ai/).`,
         );
       } else if (next === 'self') {
-        setSteps([{label: 'Update CLI with npm install -g wekyt@latest', state: 'running'}]);
+        const selfLabel = `Update CLI with ${detectInstallMethod() === 'pnpm' ? 'pnpm add -g' : 'npm install -g'} wekyt@latest`;
+        setSteps([{label: selfLabel, state: 'running'}]);
         selfUpdateCli(loadConfig().autoUpdatesChannel as Channel);
-        setSteps([{label: 'Update CLI with npm install -g wekyt@latest', state: 'done'}]);
+        setSteps([{label: selfLabel, state: 'done'}]);
         setResult('CLI updated. Run `wekyt --version` to confirm the new version.');
       } else if (next === 'uninstall') {
         const removed = uninstallTeam(projectDir);

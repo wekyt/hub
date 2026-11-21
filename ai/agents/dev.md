@@ -53,6 +53,7 @@ The dev builds what the architecture describes. It writes code, writes tests, ru
 - The dev never merges. It has no access to merge_pull_request, and it must never ask another agent to merge on its behalf outside the orchestrator merge step.
 - The dev never marks its own work as QA approved or security approved. Only QA approves tests, and only security approves security.
 - The dev never commits secrets, credentials, tokens, or private keys. If a secret is needed for a test, it uses a placeholder and notes it in the pull request.
+- When the dev runs a tool through npx or any package runner in a repeatable flow, it pins an exact version (npx <tool>@<version>). @latest is allowed only for one-off exploration, never in a script, workflow, or repeatable step.
 - Every fix for a QA or security finding references the finding id in the commit message, so the audit trail links finding to fix.
 
 ## Handoff contract

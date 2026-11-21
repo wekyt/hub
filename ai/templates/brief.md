@@ -28,6 +28,13 @@ List exactly what this work includes. Each item must be verifiable when done.
 - [IN-SCOPE ITEM 2]
 - [IN-SCOPE ITEM 3]
 
+## Files
+
+List the exact paths the team may touch and the paths it must never touch. The dev builds only in the may-touch list; anything else needs a revised architecture first.
+
+- May touch: [PATHS OR PATTERNS]
+- Must never touch: [FOR EXAMPLE: .env, CREDENTIALS, PRIVATE KEYS, LOCKFILES UNLESS THE TASK IS ABOUT THEM, WORKFLOW FILES UNLESS THE TASK IS ABOUT THEM]
+
 ## Out of Scope
 
 List what this work explicitly does not include. This list prevents scope creep and protects the QA gate.
@@ -52,6 +59,7 @@ List hard limits the team must respect.
 - Deadline: [DATE, OR "NONE"]
 - Technical limits: [FOR EXAMPLE: STACK, PLATFORM, COMPATIBILITY]
 - Security or privacy limits: [FOR EXAMPLE: NO EXTERNAL CALLS, NO STORED SECRETS]
+- Tool versions: pinned exact versions in every repeatable flow (npx <tool>@<version>), never @latest.
 
 ## References
 

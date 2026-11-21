@@ -402,6 +402,7 @@ export function statusLines(projectDir: string): string[] {
 export function detectInstallMethod(): string {
   if (process.env.WEKYT_INSTALL_METHOD) return process.env.WEKYT_INSTALL_METHOD;
   const here = fileURLToPath(import.meta.url);
+  if (here.includes(`${path.sep}.pnpm${path.sep}`)) return 'pnpm';
   if (here.includes(`${path.sep}node_modules${path.sep}wekyt${path.sep}`) || here.includes(`${path.sep}lib${path.sep}node_modules${path.sep}wekyt`)) {
     return 'npm';
   }
@@ -410,10 +411,25 @@ export function detectInstallMethod(): string {
 }
 
 export function selfUpdateCli(channel: Channel): void {
+  const spec = channel === 'stable' ? 'wekyt@stable' : 'wekyt@latest';
+  if (detectInstallMethod() === 'pnpm') {
+    if (!commandExists('pnpm')) {
+      throw new WekytError('NO_PNPM', 'pnpm is not on PATH, so the CLI cannot update itself.', 'Install pnpm (https://pnpm.io/installation) or reinstall the CLI with npm.');
+    }
+    try {
+      execFileSync('pnpm', ['add', '-g', spec], {stdio: 'inherit'});
+    } catch {
+      throw new WekytError(
+        'SELF_UPDATE_FAILED',
+        `pnpm add -g ${spec} failed.`,
+        'Check that the global pnpm directory is writable without sudo, and that the wekyt package is published. See cli/PUBLISHING.md.',
+      );
+    }
+    return;
+  }
   if (!commandExists('npm')) {
     throw new WekytError('NO_NPM', 'npm is not on PATH, so the CLI cannot update itself.', 'Install Node.js 22.12 or newer, which includes npm.');
   }
-  const spec = channel === 'stable' ? 'wekyt@stable' : 'wekyt@latest';
   try {
     execFileSync('npm', ['install', '-g', spec], {stdio: 'inherit'});
   } catch {

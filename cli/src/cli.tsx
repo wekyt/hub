@@ -100,7 +100,7 @@ async function main(): Promise<void> {
     .option('--check', 'Only show current version, latest version and channel, without downloading')
     .addOption(channelOption)
     .option('--rollback', 'Restore the previous saved copy of ai/')
-    .option('--self', 'Update the wekyt CLI itself with npm install -g wekyt@latest')
+    .option('--self', 'Update the wekyt CLI itself (npm install -g, or pnpm add -g when installed with pnpm)')
     .option('--tag <tag>', 'Update to a pinned release, for example v0.2.0')
     .action(async (options: {check?: boolean; channel?: Channel; rollback?: boolean; self?: boolean; tag?: string}) => {
       const projectDir = resolveProject(program.opts());

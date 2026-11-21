@@ -55,6 +55,8 @@ The orchestrator is the only agent that owns the end to end flow of a task. It r
 - The orchestrator never merges on partial agreement. All four layers must agree: architect, dev, QA with tests green, and security.
 - The orchestrator never merges without an audit entry written before the merge runs.
 - The orchestrator never asks a human to decide, approve, or merge. The system decides from evidence, and the merge step executes the decision.
+- All work happens on a feature branch, never on main. Before the build starts, the working tree is committed clean or a new branch is created from a clean tree, so a bad change can be reverted with git reset --hard without losing the base work.
+- No destructive operation runs on its own. Deleting files, force pushing, publishing, or dropping data needs the agreement of all four layers and an audit entry written before it runs, the same bar as the merge step.
 - If any layer disagrees, the task returns to the layer that owns the problem, with the exact finding attached. The flow restarts at that step, not from the beginning.
 - If the same task fails the same gate twice, the orchestrator rewrites the brief or the plan to remove the ambiguity that caused the failure, and records why.
 

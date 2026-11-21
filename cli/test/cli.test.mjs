@@ -65,6 +65,29 @@ test('wekyt --version shows version, method and channel', async () => {
   assert.match(r.stdout, /wekyt \d+\.\d+\.\d+ \(.+,.+channel latest\)/);
 });
 
+test('wekyt --version reports pnpm install method', async () => {
+  const {project, env} = setup();
+  const r = await wekyt(['--version'], project, {...env, WEKYT_INSTALL_METHOD: 'pnpm'});
+  assert.equal(r.code, 0);
+  assert.match(r.stdout, /wekyt \d+\.\d+\.\d+ \(pnpm, channel latest\)/);
+});
+
+test('update --self uses pnpm add -g when installed with pnpm', async () => {
+  const {project, env} = setup();
+  const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-pnpm-stub-'));
+  const calls = path.join(stubDir, 'calls.txt');
+  const stub = path.join(stubDir, 'pnpm');
+  fs.writeFileSync(stub, `#!/bin/sh\necho "$@" >> ${calls}\n`);
+  fs.chmodSync(stub, 0o755);
+  const r = await wekyt(['update', '--self'], project, {
+    ...env,
+    WEKYT_INSTALL_METHOD: 'pnpm',
+    PATH: `${stubDir}${path.delimiter}${process.env.PATH}`,
+  });
+  assert.equal(r.code, 0);
+  assert.equal(fs.readFileSync(calls, 'utf8').trim(), 'add -g wekyt@latest');
+});
+
 test('wekyt doctor passes in an empty project', async () => {
   const {project, env} = setup();
   const r = await wekyt(['doctor'], project, env);

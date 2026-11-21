@@ -5,10 +5,22 @@ Agent teams that build, maintain, and support software. Zero humans in the loop.
 ## Install
 
 ```bash
+npx wekyt
+```
+
+That opens the interactive menu: install the team, update it, check status, update the CLI, or exit. It needs Node.js 22.12 or newer, and no install step: npx downloads the `wekyt` package and runs it. To keep the CLI installed, run `npm install -g wekyt` (or `pnpm add -g wekyt`).
+
+To install only the team, without Node, use the one-command installer:
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/wekyt/hub/main/install.sh | bash
 ```
 
 One command, zero questions. It installs the default dev team into an `ai/` folder in your current project. No git clone, no npm. It needs only `curl` and `tar`, and no API keys: your agent harness provides the model access.
+
+## CLI commands
+
+All commands run in the current project folder. `wekyt install` downloads the latest release package and verifies its SHA-256 before extracting `ai/`. `wekyt update` updates the team; `wekyt update --self` updates the CLI itself with `npm install -g wekyt@latest` (or `pnpm add -g wekyt@latest` when it was installed with pnpm). They are two different updates and never mix. `wekyt doctor` checks Node, curl, tar, the installed team, and update state. `wekyt uninstall` removes `./ai/` with confirmation. Full reference: `cli/README.md`.
 
 ## What you get
 
@@ -22,7 +34,7 @@ One command, zero questions. It installs the default dev team into an `ai/` fold
 
 **2. The flow.** Every job follows the same mandatory flow: brief, plan, architecture, build, QA. No step is skipped.
 
-**3. The tool store.** Tools live in one shared store, apart from the agents. No agent owns a tool. Each agent finds the tool it needs by its description when the task calls for it, and each role has its own permissions. The QA agent, for example, cannot open a pull request even though the tool exists. Least privilege by role, not by trust.
+**3. The tool store.** Tools live in one shared store, apart from the agents, one YAML file per tool in `ai/tools/`, with input and output schemas, the exact implementation, errors, effects, and permissions per role. No agent owns a tool. Each agent finds the tool it needs by its description when the task calls for it, and each role has its own permissions. The QA agent, for example, cannot open a pull request even though the tool exists. Least privilege by role, not by trust. `tools.json` is a generated index built from the YAML files.
 
 **4. The merge gate.** No human in the loop. When every layer agrees, the merge happens on its own, with automatic rollback and a full audit of every decision.
 
@@ -46,7 +58,7 @@ The installer downloads the latest release package (`wekyt-hub.tar.gz`) from thi
 
 ## Status
 
-Phase 1 is done: the dev team, the tool store, the templates, the installer. Next: multi-model support and observability, then the CI team and the router.
+Phase 1 is done: the dev team, the tool store, the templates, the installer. Phase 2 is done: the `wekyt` CLI with its interactive menu, self-update on two channels, and the 14 tools redefined as YAML files with real implementations. Next: multi-model support and observability, then the CI team and the router.
 
 ## Support
 
@@ -67,10 +79,22 @@ Equipos de agentes que construyen, mantienen y dan soporte a software. Ningún h
 ## Instalación
 
 ```bash
+npx wekyt
+```
+
+Eso abre el menú interactivo: instalar el equipo, actualizarlo, ver el estado, actualizar el CLI, o salir. Necesita Node.js 22.12 o más nuevo, y no pide instalación: npx descarga el paquete `wekyt` y lo corre. Para dejar el CLI instalado, corré `npm install -g wekyt` (o `pnpm add -g wekyt`).
+
+Para instalar solo el equipo, sin Node, usá el instalador de un comando:
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/wekyt/hub/main/install.sh | bash
 ```
 
 Un comando, cero preguntas. Instala el equipo dev por defecto en una carpeta `ai/` dentro de tu proyecto. Sin git clone, sin npm. Solo necesita `curl` y `tar`, y no pide claves de API: el acceso al modelo lo pone tu harness de agentes.
+
+## Comandos del CLI
+
+Todos los comandos corren en la carpeta actual del proyecto. `wekyt install` descarga el paquete de la última release y verifica su SHA-256 antes de extraer `ai/`. `wekyt update` actualiza el equipo; `wekyt update --self` actualiza el propio CLI con `npm install -g wekyt@latest` (o `pnpm add -g wekyt@latest` si se instaló con pnpm). Son dos actualizaciones distintas y nunca se mezclan. `wekyt doctor` verifica Node, curl, tar, el equipo instalado y el estado de updates. `wekyt uninstall` quita `./ai/` con confirmación. Referencia completa: `cli/README.md`.
 
 ## Qué instala
 
@@ -84,7 +108,7 @@ Un comando, cero preguntas. Instala el equipo dev por defecto en una carpeta `ai
 
 **2. El flujo.** Cada trabajo sigue el mismo flujo obligatorio: brief, plan, arquitectura, build, QA. Ningún paso se salta.
 
-**3. El almacén de tools.** Las herramientas viven en un almacén compartido, aparte de los agentes. Ningún agente es dueño de una herramienta. Cada agente busca la que necesita por su descripción cuando la tarea lo pide, y cada rol tiene sus propios permisos. El agente de QA, por ejemplo, no puede abrir un pull request aunque la herramienta exista. Mínimo privilegio por rol, no por confianza.
+**3. El almacén de tools.** Las herramientas viven en un almacén compartido, aparte de los agentes, un archivo YAML por tool en `ai/tools/`, con esquemas de entrada y salida, la implementación exacta, errores, efectos y permisos por rol. Ningún agente es dueño de una herramienta. Cada agente busca la que necesita por su descripción cuando la tarea lo pide, y cada rol tiene sus propios permisos. El agente de QA, por ejemplo, no puede abrir un pull request aunque la herramienta exista. Mínimo privilegio por rol, no por confianza. `tools.json` es un índice generado desde los archivos YAML.
 
 **4. El merge gate.** Ningún humano en el loop. Cuando todas las capas acuerdan, el merge pasa solo, con rollback automático y auditoría completa de cada decisión.
 
@@ -108,7 +132,7 @@ El instalador descarga el paquete de la última release (`wekyt-hub.tar.gz`) de 
 
 ## Estado
 
-La Fase 1 está lista: el equipo dev, el almacén de tools, las plantillas, el instalador. Sigue: soporte multi-modelo y observabilidad, después el equipo de CI y el router.
+La Fase 1 está lista: el equipo dev, el almacén de tools, las plantillas, el instalador. La Fase 2 está lista: el CLI `wekyt` con su menú interactivo, auto-update en dos canales, y las 14 tools redefinidas como archivos YAML con implementaciones reales. Sigue: soporte multi-modelo y observabilidad, después el equipo de CI y el router.
 
 ## Apoyo
 
