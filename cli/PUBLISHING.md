@@ -13,7 +13,7 @@ This document is for the main agent, who publishes by browser. The builder of th
 
 Publishing goes through the GitHub Actions workflow `.github/workflows/publish.yml`, using npm Trusted Publishing (OIDC). The package page has a trusted publisher configured: GitHub Actions, org wekyt, repo hub, workflow `publish.yml`, with `npm publish` allowed. A trusted publisher configuration must complete its first successful publish within 2 days of being created, or it expires.
 
-The workflow runs on `workflow_dispatch` (branch main) and does: checkout, setup-node v6 with Node 24, setup pnpm, `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm test`, `pnpm publish --access public --provenance`. No token and no 2FA prompt: the OIDC token from the workflow is the credential.
+The workflow runs on `workflow_dispatch` (branch main) and does: checkout, setup-node v6 with Node 24, setup pnpm, `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm test`, `pnpm publish --access public --provenance --no-git-checks`. No token and no 2FA prompt: the OIDC token from the workflow is the credential. The `--no-git-checks` flag is required: the build generates `dist/wekyt.js`, which is not committed, so pnpm's default git check would refuse to publish from the resulting unclean tree.
 
 To publish a version:
 
