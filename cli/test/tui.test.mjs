@@ -3,6 +3,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
+import * as esbuild from 'esbuild';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -11,29 +12,26 @@ import {promisify} from 'node:util';
 const run = promisify(execFile);
 const cliDir = path.resolve(import.meta.dirname, '..');
 
-/** Resolve a binary in node_modules/.bin the Windows way: pnpm links .cmd
- * shims on Windows, and spawning the extensionless name fails with ENOENT.
- * The .cmd shim itself needs the shell or Node refuses with EINVAL. */
-function binPath(name) {
-  const plain = path.join(cliDir, 'node_modules', '.bin', name);
-  if (process.platform === 'win32' && fs.existsSync(`${plain}.cmd`)) return `${plain}.cmd`;
-  return plain;
-}
-
 async function buildEntry() {
   const out = path.join(os.tmpdir(), `wekyt-tui-entry-${process.pid}.mjs`);
-  await run(binPath('esbuild'), [
-    path.join(cliDir, 'test', 'tui-entry.tsx'),
-    '--bundle',
-    '--platform=node',
-    '--target=node22',
-    '--format=esm',
-    '--jsx=automatic',
-    `--outfile=${out}`,
-    '--alias:signal-exit=' + path.join(cliDir, 'src', 'lib', 'signal-exit-shim.mjs'),
-    '--banner:js=import {createRequire} from "node:module"; const require = createRequire(import.meta.url);',
-    '--log-level=error',
-  ], {shell: process.platform === 'win32'});
+  // Build through the esbuild JS API, like scripts/build.mjs does for the
+  // CLI. Spawning the esbuild binary breaks on Windows: the .cmd shim
+  // needs a shell, and cmd.exe then splits the command line at the
+  // semicolon inside the --banner:js argument.
+  await esbuild.build({
+    entryPoints: [path.join(cliDir, 'test', 'tui-entry.tsx')],
+    bundle: true,
+    platform: 'node',
+    target: 'node22',
+    format: 'esm',
+    jsx: 'automatic',
+    outfile: out,
+    alias: {'signal-exit': path.join(cliDir, 'src', 'lib', 'signal-exit-shim.mjs')},
+    banner: {
+      js: 'import {createRequire} from "node:module";\nconst require = createRequire(import.meta.url);',
+    },
+    logLevel: 'error',
+  });
   return out;
 }
 
