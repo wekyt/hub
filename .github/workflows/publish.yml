@@ -9,19 +9,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.9
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+          cache: pnpm
+          cache-dependency-path: cli/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: cli
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Build
         working-directory: cli
-        run: npm run build
+        run: pnpm build
       - name: Test
         working-directory: cli
-        run: npm test
+        run: pnpm test
       - name: Publish
         working-directory: cli
-        run: npm publish --access public --provenance
+        run: pnpm publish --access public --provenance
