@@ -1,6 +1,6 @@
-// Tools validation tests: the validator passes on the real definitions,
-// and it catches a contradiction (readOnlyHint true with write effects)
-// on a tampered copy of the tree.
+// Tools validation tests: `wekyt validate` passes on the real definitions,
+// catches a contradiction on a tampered copy, and regenerates the registry.
+// The dev wrapper script delegates to the same validator in the bundle.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
@@ -12,28 +12,63 @@ import {promisify} from 'node:util';
 const run = promisify(execFile);
 const cliDir = path.resolve(import.meta.dirname, '..');
 const hubDir = path.resolve(cliDir, '..');
-const validator = path.join(cliDir, 'scripts', 'validate-tools.mjs');
+const bin = path.join(cliDir, 'dist', 'wekyt.js');
+const wrapper = path.join(cliDir, 'scripts', 'validate-tools.mjs');
 
-test('validator passes on the real tool definitions', async () => {
-  const {stdout} = await run(process.execPath, [validator], {timeout: 30000});
-  assert.match(stdout, /validated 14 definitions, no errors/);
+test('validate passes on the real tool definitions', async () => {
+  const {stdout} = await run(process.execPath, [bin, 'validate', '--project', hubDir], {
+    timeout: 30000,
+    env: {...process.env, WEKYT_NO_AUTO_UPDATE: '1'},
+  });
+  assert.match(stdout, /wekyt validate: ok \(14 tools, 0 skills, 0 errors\)/);
 });
 
-test('validator rejects readOnlyHint true with write effects', async () => {
+test('validate rejects readOnlyHint true with write effects', async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-tools-'));
   try {
     fs.cpSync(path.join(hubDir, 'ai', 'tools'), path.join(tmp, 'ai', 'tools'), {recursive: true});
     fs.cpSync(path.join(hubDir, 'ai', 'agents'), path.join(tmp, 'ai', 'agents'), {recursive: true});
+    fs.writeFileSync(path.join(tmp, 'ai', 'VERSION'), '0.3.0\n');
     const file = path.join(tmp, 'ai', 'tools', 'read_file.yaml');
     const original = fs.readFileSync(file, 'utf8');
     const tampered = original.replace('  writes: []', '  writes:\n    - /tmp/evil.txt');
     assert.notEqual(tampered, original);
     fs.writeFileSync(file, tampered);
     await assert.rejects(
-      run(process.execPath, [validator], {timeout: 30000, env: {...process.env, WEKYT_HUB_DIR: tmp}}),
+      run(process.execPath, [bin, 'validate', '--project', tmp], {
+        timeout: 30000,
+        env: {...process.env, WEKYT_NO_AUTO_UPDATE: '1'},
+      }),
       /contradiction: readOnlyHint is true/,
     );
   } finally {
     fs.rmSync(tmp, {recursive: true, force: true});
   }
+});
+
+test('validate --generate regenerates tools.json and the permissions matrix', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-tools-'));
+  try {
+    fs.cpSync(path.join(hubDir, 'ai', 'tools'), path.join(tmp, 'ai', 'tools'), {recursive: true});
+    fs.cpSync(path.join(hubDir, 'ai', 'agents'), path.join(tmp, 'ai', 'agents'), {recursive: true});
+    fs.writeFileSync(path.join(tmp, 'ai', 'VERSION'), '0.3.0\n');
+    fs.rmSync(path.join(tmp, 'ai', 'tools', 'tools.json'));
+    const {stdout} = await run(process.execPath, [bin, 'validate', '--project', tmp, '--generate'], {
+      timeout: 30000,
+      env: {...process.env, WEKYT_NO_AUTO_UPDATE: '1'},
+    });
+    assert.match(stdout, /regenerated tools\.json and permissions\.md from 14 tool definitions/);
+    const registry = JSON.parse(fs.readFileSync(path.join(tmp, 'ai', 'tools', 'tools.json'), 'utf8'));
+    assert.equal(registry.tools.length, 14);
+    const matrix = fs.readFileSync(path.join(tmp, 'ai', 'tools', 'permissions.md'), 'utf8');
+    assert.match(matrix, /\| read_file \|/);
+    assert.match(matrix, /## Hard rules/);
+  } finally {
+    fs.rmSync(tmp, {recursive: true, force: true});
+  }
+});
+
+test('dev wrapper script delegates to the bundled validator', async () => {
+  const {stdout} = await run(process.execPath, [wrapper], {timeout: 60000});
+  assert.match(stdout, /wekyt validate: ok \(14 tools, 0 skills, 0 errors\)/);
 });

@@ -2,8 +2,8 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import {execFileSync} from 'node:child_process';
-import {HUB_REPO, RELEASE_CHECKSUMS_NAME, RELEASE_TARBALL_NAME} from '../version';
+import * as tar from 'tar';
+import {HUB_REPO, RELEASE_CHECKSUMS_NAME, RELEASE_TARBALL_NAME, VERSION} from '../version';
 import {WekytError, parseChecksums, sha256File} from './util';
 
 export interface ReleaseInfo {
@@ -25,7 +25,7 @@ async function fetchJson(url: string, timeoutMs = 15000): Promise<unknown> {
   try {
     const res = await fetch(url, {
       signal: ctrl.signal,
-      headers: {Accept: 'application/vnd.github+json', 'User-Agent': 'wekyt-cli/0.2.2'},
+      headers: {Accept: 'application/vnd.github+json', 'User-Agent': `wekyt-cli/${VERSION}`},
     });
     if (!res.ok) {
       throw new WekytError(
@@ -121,7 +121,7 @@ export async function downloadToFile(url: string, dest: string, timeoutMs = 6000
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {signal: ctrl.signal, headers: {'User-Agent': 'wekyt-cli/0.2.2'}});
+    const res = await fetch(url, {signal: ctrl.signal, headers: {'User-Agent': `wekyt-cli/${VERSION}`}});
     if (!res.ok || !res.body) {
       throw new WekytError('DOWNLOAD_FAILED', `Download returned ${res.status} for ${url}.`);
     }
@@ -145,7 +145,7 @@ export async function fetchText(url: string, timeoutMs = 15000): Promise<string>
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {signal: ctrl.signal, headers: {'User-Agent': 'wekyt-cli/0.2.2'}});
+    const res = await fetch(url, {signal: ctrl.signal, headers: {'User-Agent': `wekyt-cli/${VERSION}`}});
     if (!res.ok) throw new WekytError('DOWNLOAD_FAILED', `Download returned ${res.status} for ${url}.`);
     return await res.text();
   } finally {
@@ -207,21 +207,39 @@ export async function verifyTarball(
   return {sha256: actual, checksumsSource: source};
 }
 
-/** Extract a verified tarball into a fresh temp dir and return its ai/ path. */
-export function extractAi(tarballPath: string): {workDir: string; aiDir: string} {
+/**
+ * Extract a verified tarball into a fresh temp dir and return its ai/ path.
+ * Pure JavaScript, no tar binary: the tar package reads the archive, and
+ * every entry is checked against Tar Slip before anything is written.
+ * Symlinks and hardlinks that point outside the destination are rejected.
+ */
+export async function extractAi(tarballPath: string): Promise<{workDir: string; aiDir: string}> {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-'));
+  const dest = path.resolve(workDir);
   try {
-    execFileSync('tar', ['-tzf', tarballPath], {stdio: 'pipe'});
-  } catch {
+    const entries: string[] = [];
+    await tar.t({file: tarballPath, onentry: (entry) => entries.push(entry.path)});
+    if (!entries.some((p) => p === 'ai/' || p.startsWith('ai/'))) {
+      throw new WekytError('BAD_TARBALL', 'Package has no top level ai/ folder. Nothing was installed.');
+    }
+    await tar.x({
+      file: tarballPath,
+      cwd: workDir,
+      filter: (entryPath, entry) => {
+        const resolved = path.resolve(workDir, entryPath);
+        if (resolved !== dest && !resolved.startsWith(dest + path.sep)) return false;
+        if ('type' in entry && (entry.type === 'SymbolicLink' || entry.type === 'Link') && entry.linkpath) {
+          const target = path.resolve(path.dirname(resolved), entry.linkpath);
+          if (target !== dest && !target.startsWith(dest + path.sep)) return false;
+        }
+        return true;
+      },
+    });
+  } catch (e) {
     fs.rmSync(workDir, {recursive: true, force: true});
+    if (e instanceof WekytError) throw e;
     throw new WekytError('BAD_TARBALL', 'Package is not a valid gzip tarball. Nothing was installed.');
   }
-  const listing = execFileSync('tar', ['-tzf', tarballPath], {encoding: 'utf8'});
-  if (!listing.split('\n').some((l) => l === 'ai/' || l.startsWith('ai/'))) {
-    fs.rmSync(workDir, {recursive: true, force: true});
-    throw new WekytError('BAD_TARBALL', 'Package has no top level ai/ folder. Nothing was installed.');
-  }
-  execFileSync('tar', ['-xzf', tarballPath, '-C', workDir], {stdio: 'pipe'});
   return {workDir, aiDir: path.join(workDir, 'ai')};
 }
 

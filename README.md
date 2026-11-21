@@ -20,7 +20,7 @@ One command, zero questions. It installs the default dev team into an `ai/` fold
 
 ## CLI commands
 
-All commands run in the current project folder. `wekyt install` downloads the latest release package and verifies its SHA-256 before extracting `ai/`. `wekyt update` updates the team; `wekyt update --self` updates the CLI itself with `npm install -g wekyt@latest` (or `pnpm add -g wekyt@latest` when it was installed with pnpm). They are two different updates and never mix. `wekyt doctor` checks Node, curl, tar, the installed team, and update state. `wekyt uninstall` removes `./ai/` with confirmation. Full reference: `cli/README.md`.
+All commands run in the current project folder. `wekyt install` downloads the latest release package and verifies its SHA-256 before extracting `ai/`. `wekyt update` updates the team; `wekyt update --self` updates the CLI itself with `npm install -g wekyt@latest` (or `pnpm add -g wekyt@latest` when it was installed with pnpm). They are two different updates and never mix. `wekyt validate` validates `./ai/` (tool definitions, permissions matrix, your skills). `wekyt init` configures the harness that reads `./ai/` (Claude, Cursor, Codex or Gemini). `wekyt doctor` checks Node, the installed team, its validation, the configured harness, and update state. `wekyt uninstall` removes `./ai/` with confirmation. Full reference: `cli/README.md`.
 
 ## What you get
 
@@ -94,7 +94,7 @@ Un comando, cero preguntas. Instala el equipo dev por defecto en una carpeta `ai
 
 ## Comandos del CLI
 
-Todos los comandos corren en la carpeta actual del proyecto. `wekyt install` descarga el paquete de la última release y verifica su SHA-256 antes de extraer `ai/`. `wekyt update` actualiza el equipo; `wekyt update --self` actualiza el propio CLI con `npm install -g wekyt@latest` (o `pnpm add -g wekyt@latest` si se instaló con pnpm). Son dos actualizaciones distintas y nunca se mezclan. `wekyt doctor` verifica Node, curl, tar, el equipo instalado y el estado de updates. `wekyt uninstall` quita `./ai/` con confirmación. Referencia completa: `cli/README.md`.
+Todos los comandos corren en la carpeta actual del proyecto. `wekyt install` descarga el paquete de la última release y verifica su SHA-256 antes de extraer `ai/`. `wekyt update` actualiza el equipo; `wekyt update --self` actualiza el propio CLI con `npm install -g wekyt@latest` (o `pnpm add -g wekyt@latest` si se instaló con pnpm). Son dos actualizaciones distintas y nunca se mezclan. `wekyt validate` valida `./ai/` (definiciones de tools, matriz de permisos, tus skills). `wekyt init` configura el harness que lee `./ai/` (Claude, Cursor, Codex o Gemini). `wekyt doctor` verifica Node, el equipo instalado, su validación, el harness configurado y el estado de updates. `wekyt uninstall` quita `./ai/` con confirmación. Referencia completa: `cli/README.md`.
 
 ## Qué instala
 

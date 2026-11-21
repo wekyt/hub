@@ -1,4 +1,6 @@
 import React, {useEffect, useState} from 'react';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {Box, Text, useApp, useInput} from 'ink';
 import SelectInput from 'ink-select-input';
 import Spinner from 'ink-spinner';
@@ -13,16 +15,19 @@ import {
   selfUpdateCli,
   type Step,
 } from '../lib/team';
+import {detectHarnesses, harnessInfo, initHarness, type Harness} from '../lib/harness';
+import {listUserFiles} from '../lib/manifest';
 import {VERSION, type Channel} from '../version';
 import {loadConfig} from '../lib/config';
 import {WekytError} from '../lib/util';
 
-type Screen = 'menu' | 'progress' | 'status' | 'confirm' | 'done';
-type Action = 'install' | 'update' | 'status' | 'self' | 'uninstall' | 'exit';
+type Screen = 'menu' | 'progress' | 'status' | 'confirm' | 'done' | 'init-pick';
+type Action = 'install' | 'update' | 'status' | 'self' | 'uninstall' | 'init' | 'exit';
 
 const MENU_ITEMS = [
   {label: 'Instalar equipo', value: 'install' as Action},
   {label: 'Actualizar equipo', value: 'update' as Action},
+  {label: 'Configurar harness', value: 'init' as Action},
   {label: 'Ver estado', value: 'status' as Action},
   {label: 'Actualizar CLI', value: 'self' as Action},
   {label: 'Desinstalar equipo', value: 'uninstall' as Action},
@@ -44,6 +49,8 @@ export function App({projectDir}: {projectDir: string}): React.ReactElement {
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmLabel, setConfirmLabel] = useState('');
+  const [initChoices, setInitChoices] = useState<{label: string; value: Harness}[]>([]);
+  const [pendingHarness, setPendingHarness] = useState<Harness | null>(null);
 
   useInput((input, key) => {
     if (screen === 'menu' && (input === 'q' || key.escape)) exit();
@@ -64,15 +71,33 @@ export function App({projectDir}: {projectDir: string}): React.ReactElement {
       setScreen('status');
       return;
     }
+    if (next === 'init') {
+      const detected = detectHarnesses(projectDir).filter((d) => d.available);
+      if (detected.length === 0) {
+        setAction(next);
+        setError('No harness detected on this machine (looked for claude, gemini and codex on PATH, and a .cursor/ folder). Install one first, or use `wekyt init --harness <name>`.');
+        setScreen('done');
+        return;
+      }
+      setAction(next);
+      setInitChoices(detected.map((d) => ({label: `${harnessInfo(d.id).label} (${d.detail})`, value: d.id})));
+      setScreen('init-pick');
+      return;
+    }
     if (next === 'install' && installedVersion(projectDir) !== null) {
       setAction(next);
-      setConfirmLabel('ai/ already exists. Replace it? Replacing ai/ also replaces CONTEXT.md and your skills.');
+      setConfirmLabel('ai/ already exists. Replace the tracked team files? Your own files are kept, and modified team files are saved as .bak.');
       setScreen('confirm');
       return;
     }
     if (next === 'uninstall') {
+      const userFiles = listUserFiles(`${projectDir}/ai`);
       setAction(next);
-      setConfirmLabel('Remove ./ai/ from this project? Nothing outside ai/ is touched.');
+      setConfirmLabel(
+        userFiles.length > 0
+          ? `Remove ./ai/ from this project? This also deletes ${userFiles.length} of your own file(s) in ai/.`
+          : 'Remove ./ai/ from this project? Nothing outside ai/ is touched.',
+      );
       setScreen('confirm');
       return;
     }
@@ -98,6 +123,15 @@ export function App({projectDir}: {projectDir: string}): React.ReactElement {
             ? `Team is already up to date (${r.version}).`
             : `Updated team ${before || 'none'} -> ${r.version} (${r.files} files in ./ai/).`,
         );
+      } else if (next === 'init') {
+        const harness = pendingHarness;
+        if (!harness) throw new Error('no harness selected.');
+        const r = initHarness(projectDir, harness, {force});
+        setResult(
+          r.bridgeCreated
+            ? `Harness ${harness} configured. Bridge file created at ${r.bridgePath}.`
+            : `Harness ${harness} configured. Bridge file already exists and was not modified.`,
+        );
       } else if (next === 'self') {
         const selfLabel = `Update CLI with ${detectInstallMethod() === 'pnpm' ? 'pnpm add -g' : 'npm install -g'} wekyt@latest`;
         setSteps([{label: selfLabel, state: 'running'}]);
@@ -106,7 +140,7 @@ export function App({projectDir}: {projectDir: string}): React.ReactElement {
         setResult('CLI updated. Run `wekyt --version` to confirm the new version.');
       } else if (next === 'uninstall') {
         const removed = uninstallTeam(projectDir);
-        setResult(removed ? 'Removed ./ai/.' : 'No ./ai/ folder to remove.');
+        setResult(removed.removed ? 'Removed ./ai/.' : 'No ./ai/ folder to remove.');
       }
       setScreen('done');
     } catch (e) {
@@ -114,6 +148,22 @@ export function App({projectDir}: {projectDir: string}): React.ReactElement {
       setError(renderError(e));
       setScreen('done');
     }
+  }
+
+  function pickHarness(harness: Harness): void {
+    setPendingHarness(harness);
+    if (installedVersion(projectDir) === null) {
+      setError('No ai/ folder in this project. Install the team first.');
+      setScreen('done');
+      return;
+    }
+    if (fs.existsSync(path.join(projectDir, 'ai', 'wekyt.config.json'))) {
+      setAction('init');
+      setConfirmLabel('wekyt.config.json already exists. Replace it with the new harness?');
+      setScreen('confirm');
+      return;
+    }
+    void execute('init', false);
   }
 
   if (screen === 'status') {
@@ -128,6 +178,24 @@ export function App({projectDir}: {projectDir: string}): React.ReactElement {
         React.createElement(Text, {key: `c${i}`}, `  ${c.ok ? 'ok' : c.severity === 'fail' ? 'FAIL' : 'warn'} ${c.name}: ${c.detail}`),
       ),
       React.createElement(Text, {dimColor: true}, 'Press any key to go back.'),
+    );
+  }
+
+  if (screen === 'init-pick') {
+    return React.createElement(
+      Box,
+      {flexDirection: 'column'},
+      React.createElement(Text, {bold: true}, 'Pick the harness that reads ./ai/'),
+      React.createElement(SelectInput, {
+        items: [...initChoices, {label: 'Cancel', value: 'cancel' as unknown as Harness}],
+        onSelect: (item: {value: unknown}) => {
+          if (item.value === 'cancel') {
+            setScreen('menu');
+          } else {
+            pickHarness(item.value as Harness);
+          }
+        },
+      }),
     );
   }
 

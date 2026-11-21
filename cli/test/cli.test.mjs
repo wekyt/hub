@@ -42,11 +42,32 @@ function setup() {
   const env = {
     ...process.env,
     HOME: home,
+    // os.homedir() reads USERPROFILE on Windows, HOME everywhere else.
+    USERPROFILE: home,
     WEKYT_NO_AUTO_UPDATE: '1',
     WEKYT_TARBALL: pkg.tarball,
     WEKYT_SHA256SUMS: pkg.sums,
   };
   return {tmp, home, project, pkg, env};
+}
+
+/** A fake binary on PATH. On Windows it must be a .cmd file to execute. */
+function makeStubBin(dir, name, posixBody, winBody) {
+  const file = process.platform === 'win32' ? path.join(dir, `${name}.cmd`) : path.join(dir, name);
+  const content = process.platform === 'win32' ? `${winBody}\r\n` : `#!/bin/sh\n${posixBody}\n`;
+  fs.writeFileSync(file, content);
+  fs.chmodSync(file, 0o755);
+  return file;
+}
+
+/** A stub that records its arguments in a file, for update --self. */
+function makeArgRecorder(dir, name, recordPath) {
+  return makeStubBin(dir, name, `echo "$@" >> ${recordPath}`, `@echo %* >> ${recordPath}`);
+}
+
+/** A stub that answers --version, for harness detection. */
+function makeVersionStub(dir, name, version) {
+  return makeStubBin(dir, name, `echo "${name} ${version}"`, `@echo ${name} ${version}`);
 }
 
 async function wekyt(args, cwd, env) {
@@ -76,9 +97,7 @@ test('update --self uses pnpm add -g when installed with pnpm', async () => {
   const {project, env} = setup();
   const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-pnpm-stub-'));
   const calls = path.join(stubDir, 'calls.txt');
-  const stub = path.join(stubDir, 'pnpm');
-  fs.writeFileSync(stub, `#!/bin/sh\necho "$@" >> ${calls}\n`);
-  fs.chmodSync(stub, 0o755);
+  makeArgRecorder(stubDir, 'pnpm', calls);
   const r = await wekyt(['update', '--self'], project, {
     ...env,
     WEKYT_INSTALL_METHOD: 'pnpm',
@@ -161,4 +180,149 @@ test('update to a newer local release and rollback restores the old team', async
   assert.equal(rolled.code, 0, rolled.stderr);
   assert.match(rolled.stdout, /Restored team 0\.2\.0/);
   assert.equal(fs.readFileSync(path.join(project, 'ai', 'VERSION'), 'utf8').trim(), '0.2.0');
+});
+
+test('manifest round-trips after install', async () => {
+  const {project, env} = setup();
+  const installed = await wekyt(['install'], project, env);
+  assert.equal(installed.code, 0, installed.stderr);
+  const manifest = JSON.parse(fs.readFileSync(path.join(project, 'ai', '.wekyt-manifest.json'), 'utf8'));
+  assert.equal(manifest.version, '0.2.0');
+  assert.equal(typeof manifest.installedAt, 'string');
+  assert.equal(manifest.files['agents/dev.md'], sha256(path.join(project, 'ai', 'agents', 'dev.md')));
+  assert.equal(manifest.files['VERSION'], sha256(path.join(project, 'ai', 'VERSION')));
+  assert.ok(!('skills/mi-skill.md' in manifest.files));
+});
+
+test('custom skill survives update and install --force, modified team file gets .bak', async () => {
+  const {tmp, project, env} = setup();
+  const installed = await wekyt(['install'], project, env);
+  assert.equal(installed.code, 0, installed.stderr);
+  fs.writeFileSync(
+    path.join(project, 'ai', 'skills', 'mi-skill.md'),
+    '---\nname: mi-skill\ndescription: A custom skill for testing.\n---\n\nDo the thing.\n',
+  );
+  fs.appendFileSync(path.join(project, 'ai', 'agents', 'dev.md'), '\nUSER EDIT\n');
+
+  const next = makePackage(path.join(hubDir, 'ai'), path.join(tmp, 'pkg-next'), '9.9.9');
+  const nextEnv = {...env, WEKYT_TARBALL: next.tarball, WEKYT_SHA256SUMS: next.sums};
+  const updated = await wekyt(['update', '--tag', 'v9.9.9'], project, nextEnv);
+  assert.equal(updated.code, 0, updated.stderr);
+  assert.match(updated.stdout, /kept 1 of your own file/);
+  assert.match(updated.stdout, /saved as \.bak/);
+  assert.equal(fs.readFileSync(path.join(project, 'ai', 'skills', 'mi-skill.md'), 'utf8').includes('mi-skill'), true);
+  assert.equal(fs.readFileSync(path.join(project, 'ai', 'agents', 'dev.md.bak'), 'utf8').includes('USER EDIT'), true);
+  assert.equal(fs.readFileSync(path.join(project, 'ai', 'agents', 'dev.md'), 'utf8').includes('USER EDIT'), false);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(project, 'ai', '.wekyt-manifest.json'), 'utf8')).version, '9.9.9');
+  // The manifest lists only release files: the preserved skill and the
+  // .bak copy must not be absorbed into the tracked set, or the next
+  // install would drop them as unmodified.
+  const afterUpdate = JSON.parse(fs.readFileSync(path.join(project, 'ai', '.wekyt-manifest.json'), 'utf8'));
+  assert.ok(!('skills/mi-skill.md' in afterUpdate.files));
+  assert.ok(!('agents/dev.md.bak' in afterUpdate.files));
+
+  const forced = await wekyt(['install', '--force'], project, env);
+  assert.equal(forced.code, 0, forced.stderr);
+  assert.match(forced.stdout, /kept 2 of your own file/);
+  assert.equal(fs.existsSync(path.join(project, 'ai', 'skills', 'mi-skill.md')), true);
+  assert.equal(fs.existsSync(path.join(project, 'ai', 'agents', 'dev.md.bak')), true);
+  assert.equal(fs.readFileSync(path.join(project, 'ai', 'VERSION'), 'utf8').trim(), '0.2.0');
+});
+
+test('install, update and doctor work with no tar binary on PATH', async () => {
+  const {project, env} = setup();
+  const emptyBin = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-emptybin-'));
+  const noBinEnv = {...env, PATH: emptyBin};
+  const installed = await wekyt(['install'], project, noBinEnv);
+  assert.equal(installed.code, 0, installed.stderr);
+  const doctor = await wekyt(['doctor'], project, noBinEnv);
+  assert.equal(doctor.code, 0, doctor.stderr);
+  assert.match(doctor.stdout, /ok Validate \.\/ai\//);
+  assert.doesNotMatch(doctor.stdout, /Tool: (curl|tar)/);
+});
+
+test('validate passes on a good team and fails on a broken tools YAML', async () => {
+  const {project, env} = setup();
+  const installed = await wekyt(['install'], project, env);
+  assert.equal(installed.code, 0, installed.stderr);
+  const ok = await wekyt(['validate'], project, env);
+  assert.equal(ok.code, 0, ok.stderr);
+  assert.match(ok.stdout, /wekyt validate: ok \(14 tools, 0 skills, 0 errors\)/);
+
+  const file = path.join(project, 'ai', 'tools', 'read_file.yaml');
+  const original = fs.readFileSync(file, 'utf8');
+  fs.writeFileSync(file, original.replace('title: Read file', 'title: ""'));
+  const bad = await wekyt(['validate'], project, env);
+  assert.notEqual(bad.code, 0);
+  assert.match(bad.stderr, /read_file\.yaml/);
+  assert.match(bad.stderr, /title is required/);
+
+  const json = await wekyt(['validate', '--json'], project, env);
+  assert.notEqual(json.code, 0);
+  const parsed = JSON.parse(json.stdout);
+  assert.equal(parsed.ok, false);
+  assert.ok(parsed.errors.some((e) => e.includes('read_file.yaml')));
+});
+
+test('init is idempotent and never overwrites an existing bridge file', async () => {
+  const {project, env} = setup();
+  const installed = await wekyt(['install'], project, env);
+  assert.equal(installed.code, 0, installed.stderr);
+  const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-claude-stub-'));
+  makeVersionStub(stubDir, 'claude', '1.0.0');
+  const stubEnv = {...env, PATH: `${stubDir}${path.delimiter}${process.env.PATH}`};
+
+  const first = await wekyt(['init', '--harness', 'claude'], project, stubEnv);
+  assert.equal(first.code, 0, first.stderr);
+  assert.match(first.stdout, /bridge file created at .*CLAUDE\.md/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(project, 'ai', 'wekyt.config.json'), 'utf8')).harness, 'claude');
+  assert.match(fs.readFileSync(path.join(project, 'CLAUDE.md'), 'utf8'), /ai\/CONTEXT\.md/);
+
+  fs.appendFileSync(path.join(project, 'CLAUDE.md'), '\nMY BRIDGE EDIT\n');
+  const again = await wekyt(['init', '--harness', 'claude'], project, stubEnv);
+  assert.notEqual(again.code, 0);
+  assert.match(again.stderr, /already exists/);
+
+  const forced = await wekyt(['init', '--harness', 'claude', '--force'], project, stubEnv);
+  assert.equal(forced.code, 0, forced.stderr);
+  assert.match(forced.stdout, /already exists and was not modified/);
+  assert.match(forced.stdout, /ai\/CONTEXT\.md/);
+  assert.match(fs.readFileSync(path.join(project, 'CLAUDE.md'), 'utf8'), /MY BRIDGE EDIT/);
+});
+
+test('init rejects an unknown harness and cursor init writes the rules file', async () => {
+  const {project, env} = setup();
+  const installed = await wekyt(['install'], project, env);
+  assert.equal(installed.code, 0, installed.stderr);
+  const bad = await wekyt(['init', '--harness', 'not-a-harness'], project, env);
+  assert.notEqual(bad.code, 0);
+  assert.match(bad.stderr, /unknown harness/);
+
+  fs.mkdirSync(path.join(project, '.cursor'));
+  const cursor = await wekyt(['init', '--harness', 'cursor'], project, env);
+  assert.equal(cursor.code, 0, cursor.stderr);
+  const bridge = path.join(project, '.cursor', 'rules', 'wekyt.mdc');
+  assert.ok(fs.existsSync(bridge));
+  assert.match(fs.readFileSync(bridge, 'utf8'), /alwaysApply: true/);
+});
+
+test('doctor --json reports validation and the configured harness', async () => {
+  const {project, env} = setup();
+  const installed = await wekyt(['install'], project, env);
+  assert.equal(installed.code, 0, installed.stderr);
+  const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-gemini-stub-'));
+  makeVersionStub(stubDir, 'gemini', '0.5.0');
+  const stubEnv = {...env, PATH: `${stubDir}${path.delimiter}${process.env.PATH}`};
+  const inited = await wekyt(['init', '--harness', 'gemini'], project, stubEnv);
+  assert.equal(inited.code, 0, inited.stderr);
+
+  const r = await wekyt(['doctor', '--json'], project, stubEnv);
+  assert.equal(r.code, 0, r.stderr);
+  const parsed = JSON.parse(r.stdout);
+  assert.equal(parsed.ok, true);
+  const names = parsed.checks.map((c) => c.name);
+  assert.ok(names.includes('Validate ./ai/'));
+  assert.ok(names.includes('Harness (gemini)'));
+  assert.ok(parsed.checks.find((c) => c.name === 'Harness (gemini)').ok);
+  assert.doesNotMatch(r.stdout, /Tool: (curl|tar)/);
 });

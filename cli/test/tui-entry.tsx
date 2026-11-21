@@ -14,7 +14,9 @@ if (mode === 'menu-status') {
   const {lastFrame, stdin, unmount} = render(React.createElement(App, {projectDir}));
   await sleep(100);
   const menu = lastFrame();
-  out.push(`menu renders: ${menu.includes('Instalar equipo') && menu.includes('Actualizar equipo') && menu.includes('Ver estado') && menu.includes('Actualizar CLI') && menu.includes('Salir') ? 'ok' : 'FAIL: ' + JSON.stringify(menu)}`);
+  out.push(`menu renders: ${menu.includes('Instalar equipo') && menu.includes('Actualizar equipo') && menu.includes('Configurar harness') && menu.includes('Ver estado') && menu.includes('Actualizar CLI') && menu.includes('Salir') ? 'ok' : 'FAIL: ' + JSON.stringify(menu)}`);
+  stdin.write('\x1B[B');
+  await sleep(100);
   stdin.write('\x1B[B');
   await sleep(100);
   stdin.write('\x1B[B');
@@ -29,6 +31,22 @@ if (mode === 'menu-status') {
   await sleep(100);
   const back = lastFrame();
   out.push(`back to menu: ${back.includes('Instalar equipo') ? 'ok' : 'FAIL: ' + JSON.stringify(back)}`);
+  stdin.write('q');
+  await sleep(100);
+  unmount();
+} else if (mode === 'init-none') {
+  const {lastFrame, stdin, unmount} = render(React.createElement(App, {projectDir}));
+  await sleep(100);
+  stdin.write('\x1B[B');
+  await sleep(100);
+  stdin.write('\x1B[B');
+  await sleep(100);
+  const onInit = lastFrame();
+  out.push(`init menu item: ${onInit.includes('❯ Configurar harness') ? 'ok' : 'FAIL: ' + JSON.stringify(onInit)}`);
+  stdin.write('\r');
+  await sleep(200);
+  const done = lastFrame();
+  out.push(`init with no harness detected: ${done.includes('No harness detected') ? 'ok' : 'FAIL: ' + JSON.stringify(done)}`);
   stdin.write('q');
   await sleep(100);
   unmount();

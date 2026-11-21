@@ -22,7 +22,7 @@ or, with pnpm:
 pnpm add -g wekyt
 ```
 
-To install only the team, without Node, use the curl installer from the hub README instead.
+To install only the team, without Node, use the curl installer from the hub README instead. Note: the curl installer (`install.sh`) still needs `curl` and `tar` on PATH; it is a shell script by design. The CLI itself needs neither: it downloads with native `fetch` and extracts with the pure JavaScript `tar` package, so `install`, `update` and `doctor` work on a machine with no `curl` or `tar` installed.
 
 ## Commands
 
@@ -30,13 +30,38 @@ All commands run in the current project folder, unless `--project <dir>` is give
 
 | Command | What it does |
 | --- | --- |
-| `wekyt` | Open the interactive menu (install, update, status, update CLI, uninstall, exit). Needs a terminal. |
-| `wekyt install` | Install the dev team into `./ai/` from the latest GitHub release, SHA-256 verified. Refuses when `ai/` exists, unless `--force`. `--tag vX.Y.Z` pins a release. |
+| `wekyt` | Open the interactive menu (install, update, configure harness, status, update CLI, uninstall, exit). Needs a terminal. |
+| `wekyt install` | Install the dev team into `./ai/` from the latest GitHub release, SHA-256 verified. Refuses when `ai/` exists, unless `--force`. `--tag vX.Y.Z` pins a release. Writes `./ai/.wekyt-manifest.json` listing every file the release shipped with its SHA-256. |
 | `wekyt update` | Update the installed team to the latest release of the channel. `--check` only reports versions. `--channel latest` or `--channel stable` picks the channel. `--rollback` restores the previous saved copy of `ai/`. |
 | `wekyt update --self` | Update the CLI itself with `npm install -g wekyt@latest`, or `pnpm add -g wekyt@latest` when it was installed with pnpm. This is a different update from `wekyt update`, which updates the team. |
+| `wekyt validate` | Validate `./ai/`: tool definitions (`ai/tools/*.yaml`), their consistency with `tools.json` and the permissions matrix, and your own skills (frontmatter, required fields, no name collisions). Exit 0 when valid, 1 on errors, naming the exact file and field. `--json` prints a machine readable report. `--generate` validates and regenerates `tools.json` and the permissions matrix. |
+| `wekyt init` | Configure the harness that reads `./ai/`. Writes `./ai/wekyt.config.json` with the harness name, and a bridge file the harness reads (see below). Detects `claude`, `gemini` and `codex` on PATH (checks `--version`) and a `.cursor/` folder for Cursor. `--harness <name>` skips the picker. Never runs agents and never asks for API keys. |
 | `wekyt --version` | Show CLI version, install method (npm, pnpm, curl, or local) and channel. |
-| `wekyt doctor` | Check Node >= 22.12, curl, tar, the installed team, and update state. |
-| `wekyt uninstall` | Remove `./ai/`, with confirmation unless `--yes`. Nothing outside `ai/` is touched. |
+| `wekyt doctor` | Check Node >= 22.12, the installed team, the validation of `./ai/`, the configured harness, and update state. `--json` prints a machine readable report and exits 1 when a fail check is present. No external binary is needed: downloads use native fetch and extraction is pure JavaScript. |
+| `wekyt uninstall` | Remove `./ai/`, with confirmation unless `--yes`. Warns when `ai/` holds your own files (not part of the team). Nothing outside `ai/` is touched. |
+
+## Your files are never deleted by install or update
+
+Every install writes `./ai/.wekyt-manifest.json`: the team version, the install date, and the SHA-256 of every file the release shipped. On update or `install --force`:
+
+- Files the release shipped and you never touched are replaced by the new version.
+- Files the release shipped and you modified are saved as `.bak` next to the new file, and the update reports them.
+- Your own files (skills, local configs, anything no manifest lists) are kept untouched. The new release never overwrites or deletes them, even with `--force`.
+
+`--force` means "replace tracked team files even if modified (with `.bak`)", never "wipe `./ai/`". Rollback snapshots live in `~/.wekyt/backups/` (latest 5 kept) and `wekyt update --rollback` restores the previous copy of `ai/`, your files included.
+
+## Harness bridge files
+
+`wekyt init` writes `./ai/wekyt.config.json` as `{"harness": "<name>", "configVersion": 1}` and creates one bridge file at the project root (or under `.cursor/` for Cursor) that points the harness at `./ai/`:
+
+| Harness | Bridge file |
+| --- | --- |
+| `claude` | `CLAUDE.md` |
+| `cursor` | `.cursor/rules/wekyt.mdc` |
+| `codex` | `AGENTS.md` |
+| `gemini` | `GEMINI.md` |
+
+The bridge file is a short pointer: read `ai/CONTEXT.md` for the team map and `ai/README.md` for the rules, then follow the orchestrator flow (brief, plan, architecture, build, QA). If the bridge file already exists, it is never modified: `wekyt init` reports the exact snippet to add instead. If `./ai/wekyt.config.json` already exists, `wekyt init` asks before overwriting it, unless `--force`.
 
 ## Updates, channels and the background check
 

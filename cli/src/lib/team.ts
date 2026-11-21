@@ -4,9 +4,19 @@ import * as path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {VERSION, DEFAULT_CHANNEL, type Channel} from '../version';
-import {WekytError, commandExists, compareSemver, ensureWekytHome, formatBytes} from './util';
+import {WekytError, commandExists, compareSemver, ensureWekytHome, formatBytes, sha256File} from './util';
 import {loadConfig, saveConfig, saveState} from './config';
 import {downloadToFile, extractAi, resolveRelease, verifyTarball, type ReleaseInfo} from './release';
+import {
+  buildManifest,
+  listFilesRecursive,
+  listUserFiles,
+  readManifest,
+  writeManifest,
+  type Manifest,
+} from './manifest';
+import {validateProject} from './validate';
+import {detectHarnesses, readProjectConfig} from './harness';
 
 export type StepState = 'pending' | 'running' | 'done' | 'failed';
 export interface Step {
@@ -138,7 +148,7 @@ export async function fetchTeamPackage(release: ReleaseInfo, onStep?: OnStep): P
     steps[1].detail = sha256.slice(0, 12) + '...';
     steps[2].state = 'running';
     report();
-    const {workDir, aiDir} = extractAi(tarballPath);
+    const {workDir, aiDir} = await extractAi(tarballPath);
     steps[2].state = 'done';
     report();
     return {release, tarballPath, workDir, aiDir, sha256, bytes};
@@ -152,36 +162,99 @@ export async function fetchTeamPackage(release: ReleaseInfo, onStep?: OnStep): P
   }
 }
 
+export interface MergeResult {
+  /** User files (not in any manifest) copied into the new team. */
+  preserved: string[];
+  /** Tracked files the user modified, saved as .bak next to the new file. */
+  bak: string[];
+}
+
+/**
+ * Merge the old team into the freshly installed one. sourceAiDir is the
+ * previous ai/ (usually the rollback snapshot just saved). Tracked files the
+ * user never touched are replaced by the new version. Tracked files the user
+ * modified are saved as .bak next to the new file. Files no manifest lists
+ * are the user's own: they are copied over untouched, unless the new release
+ * ships a file at the same path, in which case the user's copy becomes .bak
+ * and the new team file wins.
+ */
+export function mergePreserved(sourceAiDir: string, newAiDir: string, oldManifest: Manifest | null): MergeResult {
+  const preserved: string[] = [];
+  const bak: string[] = [];
+  const newFiles = new Set(listFilesRecursive(newAiDir));
+  const tracked = oldManifest ? oldManifest.files : {};
+  for (const rel of listFilesRecursive(sourceAiDir)) {
+    const src = path.join(sourceAiDir, ...rel.split('/'));
+    const dest = path.join(newAiDir, ...rel.split('/'));
+    const isTracked = Object.hasOwn(tracked, rel);
+    const modified = isTracked ? sha256File(src) !== tracked[rel] : false;
+    if (isTracked && !modified) continue;
+    if (newFiles.has(rel)) {
+      fs.copyFileSync(src, dest + '.bak');
+      bak.push(rel);
+    } else {
+      fs.mkdirSync(path.dirname(dest), {recursive: true});
+      fs.copyFileSync(src, dest);
+      preserved.push(rel);
+    }
+  }
+  return {preserved, bak};
+}
+
+export interface InstallResult {
+  version: string;
+  files: number;
+  preserved: string[];
+  bak: string[];
+}
+
 export interface InstallOptions {
   force?: boolean;
   tag?: string;
   onStep?: OnStep;
 }
 
-export async function installTeam(projectDir: string, opts: InstallOptions = {}): Promise<{version: string; files: number}> {
+export async function installTeam(projectDir: string, opts: InstallOptions = {}): Promise<InstallResult> {
   const aiDir = projectAiDir(projectDir);
   if (fs.existsSync(aiDir) && !opts.force) {
     throw new WekytError(
       'AI_EXISTS',
       `ai/ already exists in ${projectDir}.`,
-      'Move it aside first, or run with --force to replace it. Replacing ai/ also replaces CONTEXT.md and your skills, so keep them safe first.',
+      'Move it aside first, or run with --force. --force replaces tracked team files, saves your modified ones as .bak, and never deletes your own files.',
     );
   }
   const release = await resolveRelease(opts.tag);
   const pkg = await fetchTeamPackage(release, opts.onStep);
+  // The manifest lists only the files the release shipped. Hash the
+  // extracted package now, before the rename moves it into the project:
+  // hashing the installed ai/ after the merge would absorb the user's own
+  // files and .bak copies into the tracked set, and the next update would
+  // drop them as unmodified. A local tarball resolves as version "local",
+  // so take the version from the packaged ai/VERSION, like updateTeam.
+  const manifest = buildManifest(pkg.aiDir, versionOfAiDir(pkg.aiDir) || release.version);
   try {
+    let merge: MergeResult = {preserved: [], bak: []};
     if (opts.force && fs.existsSync(aiDir)) {
+      const oldManifest = readManifest(aiDir);
+      const backup = saveBackup(projectDir);
       fs.rmSync(aiDir, {recursive: true, force: true});
+      fs.renameSync(pkg.aiDir, aiDir);
+      if (backup) merge = mergePreserved(path.join(backup.path, 'ai'), aiDir, oldManifest);
+    } else {
+      fs.renameSync(pkg.aiDir, aiDir);
     }
-    fs.renameSync(pkg.aiDir, aiDir);
     stampVersion(aiDir, release.version);
+    // The stamped VERSION may differ from the packaged one (local
+    // tarballs), so hash the installed file for that one entry.
+    manifest.files['VERSION'] = sha256File(path.join(aiDir, 'VERSION'));
+    writeManifest(aiDir, manifest);
     // The version that counts is the one stamped inside ai/VERSION, which
     // the release process writes from the tag. A local tarball resolves as
     // version "local", so report the stamped version instead.
     const version = installedVersion(projectDir) || release.version;
     const files = countAiFiles(projectDir);
     saveState({lastAttempt: new Date().toISOString(), lastAttemptOk: true});
-    return {version, files};
+    return {version, files, preserved: merge.preserved, bak: merge.bak};
   } finally {
     fs.rmSync(pkg.workDir, {recursive: true, force: true});
     fs.rmSync(path.dirname(pkg.tarballPath), {recursive: true, force: true});
@@ -245,7 +318,7 @@ export async function checkTeamUpdate(projectDir: string, channel: Channel): Pro
   return {current, latest: version, channel, upToDate};
 }
 
-export async function updateTeam(projectDir: string, opts: UpdateOptions = {}): Promise<{version: string; files: number; rolledBack?: boolean}> {
+export async function updateTeam(projectDir: string, opts: UpdateOptions = {}): Promise<{version: string; files: number; preserved: string[]; bak: string[]; rolledBack?: boolean}> {
   const channel: Channel = opts.channel || loadConfig().autoUpdatesChannel || DEFAULT_CHANNEL;
   if (opts.channel) saveConfig({autoUpdatesChannel: opts.channel});
 
@@ -260,12 +333,12 @@ export async function updateTeam(projectDir: string, opts: UpdateOptions = {}): 
     if (fs.existsSync(aiDir)) fs.rmSync(aiDir, {recursive: true, force: true});
     fs.cpSync(path.join(latest.path, 'ai'), aiDir, {recursive: true});
     const files = countAiFiles(projectDir);
-    return {version: latest.version, files, rolledBack: true};
+    return {version: latest.version, files, preserved: [], bak: [], rolledBack: true};
   }
 
   if (opts.check) {
     const result = await checkTeamUpdate(projectDir, channel);
-    return {version: result.latest, files: countAiFiles(projectDir)};
+    return {version: result.latest, files: countAiFiles(projectDir), preserved: [], bak: []};
   }
 
   const current = installedVersion(projectDir);
@@ -285,20 +358,33 @@ export async function updateTeam(projectDir: string, opts: UpdateOptions = {}): 
   // The version that counts is the one stamped inside the downloaded
   // ai/VERSION, not the tag alone: a local tarball resolves as "local".
   const newVersion = versionOfAiDir(pkg.aiDir) || release.version;
+  // The manifest lists only the files the release shipped. Hash the
+  // extracted package now, before the rename moves it into the project:
+  // hashing the installed ai/ after the merge would absorb the user's own
+  // files and .bak copies into the tracked set, and the next update would
+  // drop them as unmodified.
+  const manifest = buildManifest(pkg.aiDir, newVersion);
   if (current !== 'unknown' && compareSemver(current, newVersion) >= 0) {
     fs.rmSync(pkg.workDir, {recursive: true, force: true});
     fs.rmSync(path.dirname(pkg.tarballPath), {recursive: true, force: true});
-    return {version: current, files: countAiFiles(projectDir)};
+    return {version: current, files: countAiFiles(projectDir), preserved: [], bak: []};
   }
   try {
-    saveBackup(projectDir);
     const aiDir = projectAiDir(projectDir);
+    const oldManifest = readManifest(aiDir);
+    const backup = saveBackup(projectDir);
     fs.rmSync(aiDir, {recursive: true, force: true});
     fs.renameSync(pkg.aiDir, aiDir);
     stampVersion(aiDir, newVersion);
+    let merge: MergeResult = {preserved: [], bak: []};
+    if (backup) merge = mergePreserved(path.join(backup.path, 'ai'), aiDir, oldManifest);
+    // The stamped VERSION may differ from the packaged one (local
+    // tarballs), so hash the installed file for that one entry.
+    manifest.files['VERSION'] = sha256File(path.join(aiDir, 'VERSION'));
+    writeManifest(aiDir, manifest);
     const files = countAiFiles(projectDir);
     saveState({lastAttempt: new Date().toISOString(), lastAttemptOk: true});
-    return {version: newVersion, files};
+    return {version: newVersion, files, preserved: merge.preserved, bak: merge.bak};
   } catch (e) {
     saveState({lastAttempt: new Date().toISOString(), lastAttemptOk: false, lastAttemptError: e instanceof Error ? e.message : String(e)});
     throw e;
@@ -308,11 +394,18 @@ export async function updateTeam(projectDir: string, opts: UpdateOptions = {}): 
   }
 }
 
-export function uninstallTeam(projectDir: string): boolean {
+export interface UninstallResult {
+  removed: boolean;
+  /** Files the user owns in ai/ (not in any manifest) that will be deleted too. */
+  userFiles: string[];
+}
+
+export function uninstallTeam(projectDir: string): UninstallResult {
   const aiDir = projectAiDir(projectDir);
-  if (!fs.existsSync(aiDir)) return false;
+  if (!fs.existsSync(aiDir)) return {removed: false, userFiles: []};
+  const userFiles = listUserFiles(aiDir);
   fs.rmSync(aiDir, {recursive: true, force: true});
-  return true;
+  return {removed: true, userFiles};
 }
 
 export interface DoctorCheck {
@@ -333,16 +426,6 @@ export function doctor(projectDir: string): DoctorCheck[] {
     fix: nodeOk ? undefined : 'Install Node.js 22.12 or newer from https://nodejs.org, or use the curl installer which needs no Node.',
     severity: 'fail',
   });
-  for (const tool of ['curl', 'tar']) {
-    const ok = commandExists(tool);
-    checks.push({
-      name: `Tool: ${tool}`,
-      ok,
-      detail: ok ? 'found on PATH' : 'not found on PATH',
-      fix: ok ? undefined : `Install ${tool} with your system package manager.`,
-      severity: 'fail',
-    });
-  }
   const version = installedVersion(projectDir);
   checks.push({
     name: 'Team (./ai/)',
@@ -351,6 +434,38 @@ export function doctor(projectDir: string): DoctorCheck[] {
     fix: version === null ? 'Run `wekyt install` in this project.' : undefined,
     severity: 'warn',
   });
+  if (version !== null) {
+    const result = validateProject(projectDir);
+    checks.push({
+      name: 'Validate ./ai/',
+      ok: result.ok,
+      detail: result.ok
+        ? `ok (${result.tools} tools, ${result.skills} skills)`
+        : `${result.errors.length} error(s), first: ${result.errors[0]}`,
+      fix: result.ok ? undefined : 'Run `wekyt validate` for the full list.',
+      severity: 'fail',
+    });
+  }
+  const configured = readProjectConfig(projectDir);
+  if (configured === null) {
+    checks.push({
+      name: 'Harness',
+      ok: true,
+      detail: 'no harness configured',
+      fix: 'Run `wekyt init` to pick the harness that reads ./ai/.',
+      severity: 'warn',
+    });
+  } else {
+    const found = detectHarnesses(projectDir).find((h) => h.id === configured.harness);
+    const ok = found?.available ?? false;
+    checks.push({
+      name: `Harness (${configured.harness})`,
+      ok,
+      detail: found ? found.detail : 'unknown harness',
+      fix: ok ? undefined : `Install ${configured.harness} or run \`wekyt init --force\` to pick another harness.`,
+      severity: 'warn',
+    });
+  }
   const state = (() => {
     try {
       return JSON.parse(fs.readFileSync(path.join(ensureWekytHome(), 'update-state.json'), 'utf8')) as {

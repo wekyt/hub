@@ -43,6 +43,24 @@ test('TUI menu, navigation, status screen and back', async () => {
   }
 });
 
+test('TUI init with no harness detected reports it', async () => {
+  const entry = await buildEntry();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-tui-'));
+  const emptyBin = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-emptybin-'));
+  try {
+    // Empty PATH so no harness binary is found (codex is on PATH in this VM).
+    const {stdout} = await run(process.execPath, [entry, dir, 'init-none'], {
+      timeout: 30000,
+      env: {...process.env, PATH: emptyBin},
+    });
+    assert.match(stdout, /init menu item: ok/);
+    assert.match(stdout, /init with no harness detected: ok/);
+  } finally {
+    fs.rmSync(dir, {recursive: true, force: true});
+    fs.rmSync(entry, {force: true});
+  }
+});
+
 test('TUI install with existing ai/ asks for confirmation', async () => {
   const entry = await buildEntry();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-tui-'));
