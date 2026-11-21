@@ -23,6 +23,37 @@ test('validate passes on the real tool definitions', async () => {
   assert.match(stdout, /wekyt validate: ok \(14 tools, 0 skills, 0 errors\)/);
 });
 
+test('validate passes when agent and skill files use CRLF line endings', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-crlf-'));
+  try {
+    fs.cpSync(path.join(hubDir, 'ai', 'tools'), path.join(tmp, 'ai', 'tools'), {recursive: true});
+    fs.cpSync(path.join(hubDir, 'ai', 'agents'), path.join(tmp, 'ai', 'agents'), {recursive: true});
+    fs.writeFileSync(path.join(tmp, 'ai', 'VERSION'), '0.3.0\n');
+    // Windows checkouts use CRLF: the frontmatter parsers must see the
+    // same line endings on every platform, or validate fails with
+    // "cannot read frontmatter" and permissions mismatches.
+    const toCrlf = (file) => {
+      fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'));
+    };
+    for (const f of fs.readdirSync(path.join(tmp, 'ai', 'agents'))) toCrlf(path.join(tmp, 'ai', 'agents', f));
+    for (const f of fs.readdirSync(path.join(tmp, 'ai', 'tools')).filter((f) => f.endsWith('.yaml'))) {
+      toCrlf(path.join(tmp, 'ai', 'tools', f));
+    }
+    fs.mkdirSync(path.join(tmp, 'ai', 'skills'), {recursive: true});
+    fs.writeFileSync(
+      path.join(tmp, 'ai', 'skills', 'mi-skill.md'),
+      '---\r\nname: mi-skill\r\ndescription: A custom skill for testing.\r\n---\r\n\r\nDo the thing.\r\n',
+    );
+    const {stdout} = await run(process.execPath, [bin, 'validate', '--project', tmp], {
+      timeout: 30000,
+      env: {...process.env, WEKYT_NO_AUTO_UPDATE: '1'},
+    });
+    assert.match(stdout, /wekyt validate: ok \(14 tools, 1 skills, 0 errors\)/);
+  } finally {
+    fs.rmSync(tmp, {recursive: true, force: true});
+  }
+});
+
 test('validate rejects readOnlyHint true with write effects', async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-tools-'));
   try {

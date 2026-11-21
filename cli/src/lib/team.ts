@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {VERSION, DEFAULT_CHANNEL, type Channel} from '../version';
-import {WekytError, commandExists, compareSemver, ensureWekytHome, formatBytes, sha256File} from './util';
+import {WekytError, compareSemver, ensureWekytHome, formatBytes, resolveCommand, sha256File} from './util';
 import {loadConfig, saveConfig, saveState} from './config';
 import {downloadToFile, extractAi, resolveRelease, verifyTarball, type ReleaseInfo} from './release';
 import {
@@ -528,11 +528,14 @@ export function detectInstallMethod(): string {
 export function selfUpdateCli(channel: Channel): void {
   const spec = channel === 'stable' ? 'wekyt@stable' : 'wekyt@latest';
   if (detectInstallMethod() === 'pnpm') {
-    if (!commandExists('pnpm')) {
+    // Spawn the resolved path: a bare 'pnpm' fails on Windows when only a
+    // pnpm.cmd shim is on PATH (CreateProcess appends .exe only).
+    const pnpmPath = resolveCommand('pnpm');
+    if (!pnpmPath) {
       throw new WekytError('NO_PNPM', 'pnpm is not on PATH, so the CLI cannot update itself.', 'Install pnpm (https://pnpm.io/installation) or reinstall the CLI with npm.');
     }
     try {
-      execFileSync('pnpm', ['add', '-g', spec], {stdio: 'inherit'});
+      execFileSync(pnpmPath, ['add', '-g', spec], {stdio: 'inherit'});
     } catch {
       throw new WekytError(
         'SELF_UPDATE_FAILED',
@@ -542,11 +545,12 @@ export function selfUpdateCli(channel: Channel): void {
     }
     return;
   }
-  if (!commandExists('npm')) {
+  const npmPath = resolveCommand('npm');
+  if (!npmPath) {
     throw new WekytError('NO_NPM', 'npm is not on PATH, so the CLI cannot update itself.', 'Install Node.js 22.12 or newer, which includes npm.');
   }
   try {
-    execFileSync('npm', ['install', '-g', spec], {stdio: 'inherit'});
+    execFileSync(npmPath, ['install', '-g', spec], {stdio: 'inherit'});
   } catch {
     throw new WekytError(
       'SELF_UPDATE_FAILED',

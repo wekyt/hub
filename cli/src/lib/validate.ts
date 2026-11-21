@@ -182,7 +182,9 @@ function readFrontmatterTools(c: Checker, agentsDir: string): Record<string, str
   const out: Record<string, string[]> = {};
   if (!fs.existsSync(agentsDir)) return out;
   for (const file of fs.readdirSync(agentsDir).filter((f) => f.endsWith('.md'))) {
-    const text = fs.readFileSync(path.join(agentsDir, file), 'utf8');
+    // Windows checkouts use CRLF; normalize first so the frontmatter
+    // regexes below see the same line endings on every platform.
+    const text = fs.readFileSync(path.join(agentsDir, file), 'utf8').replace(/\r\n/g, '\n');
     const nameMatch = text.match(/^name:\s*(\S+)/m);
     const toolsMatch = text.match(/^tools:\n((?:  - \S+\n)+)/m);
     if (!nameMatch || !toolsMatch) {
@@ -288,7 +290,9 @@ function checkSkills(c: Checker, skillsDir: string): number {
   const names = new Set<string>();
   for (const file of files) {
     const rel = `skills/${path.relative(skillsDir, file).split(path.sep).join('/')}`;
-    const text = fs.readFileSync(file, 'utf8');
+    // Windows checkouts use CRLF; normalize first so the frontmatter
+    // regex below sees the same line endings on every platform.
+    const text = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
     const match = text.match(/^---\n([\s\S]*?)\n---\n/);
     if (!match) {
       c.fail(`${rel}: no frontmatter block, a skill needs name and description in frontmatter`);

@@ -11,9 +11,17 @@ import {promisify} from 'node:util';
 const run = promisify(execFile);
 const cliDir = path.resolve(import.meta.dirname, '..');
 
+/** Resolve a binary in node_modules/.bin the Windows way: pnpm links .cmd
+ * shims on Windows, and spawning the extensionless name fails with ENOENT. */
+function binPath(name) {
+  const plain = path.join(cliDir, 'node_modules', '.bin', name);
+  if (process.platform === 'win32' && fs.existsSync(`${plain}.cmd`)) return `${plain}.cmd`;
+  return plain;
+}
+
 async function buildEntry() {
   const out = path.join(os.tmpdir(), `wekyt-tui-entry-${process.pid}.mjs`);
-  await run(path.join(cliDir, 'node_modules', '.bin', 'esbuild'), [
+  await run(binPath('esbuild'), [
     path.join(cliDir, 'test', 'tui-entry.tsx'),
     '--bundle',
     '--platform=node',

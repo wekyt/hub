@@ -72,19 +72,30 @@ export function writeJsonFileAtomic(filePath: string, value: unknown): void {
   fs.renameSync(tmp, filePath);
 }
 
-export function commandExists(cmd: string): boolean {
+/**
+ * Resolve a command to its absolute path, trying the Windows executable
+ * suffixes too. Spawning a bare name fails on Windows when only a .cmd shim
+ * exists (CreateProcess appends .exe only), so callers must spawn the
+ * resolved path. Returns null when the command is not on PATH.
+ */
+export function resolveCommand(cmd: string): string | null {
   const pathEnv = process.env.PATH || '';
   for (const dir of pathEnv.split(path.delimiter)) {
     if (!dir) continue;
     for (const suffix of ['', '.exe', '.cmd']) {
       try {
-        if (fs.statSync(path.join(dir, cmd + suffix)).isFile()) return true;
+        const candidate = path.join(dir, cmd + suffix);
+        if (fs.statSync(candidate).isFile()) return candidate;
       } catch {
         // not here
       }
     }
   }
-  return false;
+  return null;
+}
+
+export function commandExists(cmd: string): boolean {
+  return resolveCommand(cmd) !== null;
 }
 
 export function formatBytes(n: number): string {
