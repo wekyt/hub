@@ -12,7 +12,8 @@ const run = promisify(execFile);
 const cliDir = path.resolve(import.meta.dirname, '..');
 
 /** Resolve a binary in node_modules/.bin the Windows way: pnpm links .cmd
- * shims on Windows, and spawning the extensionless name fails with ENOENT. */
+ * shims on Windows, and spawning the extensionless name fails with ENOENT.
+ * The .cmd shim itself needs the shell or Node refuses with EINVAL. */
 function binPath(name) {
   const plain = path.join(cliDir, 'node_modules', '.bin', name);
   if (process.platform === 'win32' && fs.existsSync(`${plain}.cmd`)) return `${plain}.cmd`;
@@ -32,7 +33,7 @@ async function buildEntry() {
     '--alias:signal-exit=' + path.join(cliDir, 'src', 'lib', 'signal-exit-shim.mjs'),
     '--banner:js=import {createRequire} from "node:module"; const require = createRequire(import.meta.url);',
     '--log-level=error',
-  ]);
+  ], {shell: process.platform === 'win32'});
   return out;
 }
 

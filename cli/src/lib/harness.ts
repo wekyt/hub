@@ -5,7 +5,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {WekytError, commandExists, resolveCommand} from './util';
+import {WekytError, commandExists, resolveCommand, shellOptionFor} from './util';
 
 export const HARNESSES = ['claude', 'cursor', 'codex', 'gemini'] as const;
 export type Harness = (typeof HARNESSES)[number];
@@ -62,11 +62,12 @@ export function readProjectConfig(projectDir: string): ProjectConfig | null {
 
 function binaryResponds(binary: string): boolean {
   // Spawn the resolved path: a bare name fails on Windows when only a
-  // .cmd shim is on PATH (CreateProcess appends .exe only).
+  // .cmd shim is on PATH (CreateProcess appends .exe only), and a .cmd
+  // shim needs the shell or Node refuses to spawn it (EINVAL).
   const resolved = resolveCommand(binary);
   if (!resolved) return false;
   try {
-    const r = spawnSync(resolved, ['--version'], {timeout: 5000, stdio: 'pipe'});
+    const r = spawnSync(resolved, ['--version'], {timeout: 5000, stdio: 'pipe', ...shellOptionFor(resolved)});
     return r.status === 0;
   } catch {
     return false;

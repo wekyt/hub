@@ -94,6 +94,18 @@ export function resolveCommand(cmd: string): string | null {
   return null;
 }
 
+/**
+ * Spawn options for a resolved command file. Since the CVE-2024-27980 fix,
+ * Node refuses to spawn .bat/.cmd files on Windows without a shell
+ * (EINVAL): they must run through cmd.exe. .exe files and extensionless
+ * files spawn directly. The platform parameter exists only so the win32
+ * branch is unit-testable on other platforms; callers pass nothing.
+ */
+export function shellOptionFor(file: string, platform: NodeJS.Platform = process.platform): {shell?: true} {
+  if (platform === 'win32' && /\.(cmd|bat)$/i.test(file)) return {shell: true};
+  return {};
+}
+
 export function commandExists(cmd: string): boolean {
   return resolveCommand(cmd) !== null;
 }
