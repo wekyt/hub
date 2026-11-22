@@ -34,7 +34,7 @@ All commands run in the current project folder. `wekyt install` downloads the la
 
 **2. The flow.** Every job follows the same mandatory flow: brief, plan, architecture, build, QA. No step is skipped.
 
-**3. The tool store.** Tools live in one shared store, apart from the agents, one YAML file per tool in `ai/tools/`, with input and output schemas, the exact implementation, errors, effects, and permissions per role. No agent owns a tool. Each agent finds the tool it needs by its description when the task calls for it, and each role has its own permissions. The QA agent, for example, cannot open a pull request even though the tool exists. Least privilege by role, not by trust. `tools.json` is a generated index built from the YAML files.
+**3. The tool store.** Tools live in one shared store, apart from the agents, one YAML file per tool in `ai/tools/`, with input and output schemas, the exact implementation, errors, effects, and permissions per role. Every tool is executable: each one ships a handler script in `ai/tools/handlers/` that a harness calls as `node ai/tools/handlers/<id>.mjs`, with JSON in on stdin and JSON out on stdout. No agent owns a tool. Each agent finds the tool it needs by its description when the task calls for it, and each role has its own permissions. The QA agent, for example, cannot open a pull request even though the tool exists. Least privilege by role, not by trust. `tools.json` is a generated index built from the YAML files.
 
 **4. The merge gate.** No human in the loop. When every layer agrees, the merge happens on its own, with automatic rollback and a full audit of every decision.
 
@@ -58,7 +58,7 @@ The installer downloads the latest release package (`wekyt-hub.tar.gz`) from thi
 
 ## Status
 
-Phase 1 is done: the dev team, the tool store, the templates, the installer. Phase 2 is done: the `wekyt` CLI with its interactive menu, self-update on two channels, and the 14 tools redefined as YAML files with real implementations. Next: multi-model support and observability, then the CI team and the router.
+Phase 1 is done: the dev team, the tool store, the templates, the installer. Phase 2 is done: the `wekyt` CLI with its interactive menu, self-update on two channels, and the 18 tools as executable handlers with a validator that proves each one runs. Next: multi-model support and observability, then the CI team and the router.
 
 ## Support
 
@@ -108,7 +108,7 @@ Todos los comandos corren en la carpeta actual del proyecto. `wekyt install` des
 
 **2. El flujo.** Cada trabajo sigue el mismo flujo obligatorio: brief, plan, arquitectura, build, QA. Ningún paso se salta.
 
-**3. El almacén de tools.** Las herramientas viven en un almacén compartido, aparte de los agentes, un archivo YAML por tool en `ai/tools/`, con esquemas de entrada y salida, la implementación exacta, errores, efectos y permisos por rol. Ningún agente es dueño de una herramienta. Cada agente busca la que necesita por su descripción cuando la tarea lo pide, y cada rol tiene sus propios permisos. El agente de QA, por ejemplo, no puede abrir un pull request aunque la herramienta exista. Mínimo privilegio por rol, no por confianza. `tools.json` es un índice generado desde los archivos YAML.
+**3. El almacén de tools.** Las herramientas viven en un almacén compartido, aparte de los agentes, un archivo YAML por tool en `ai/tools/`, con esquemas de entrada y salida, la implementación exacta, errores, efectos y permisos por rol. Cada tool es ejecutable: cada una trae un handler en `ai/tools/handlers/` que un harness llama como `node ai/tools/handlers/<id>.mjs`, con JSON de entrada por stdin y JSON de salida por stdout. Ningún agente es dueño de una herramienta. Cada agente busca la que necesita por su descripción cuando la tarea lo pide, y cada rol tiene sus propios permisos. El agente de QA, por ejemplo, no puede abrir un pull request aunque la herramienta exista. Mínimo privilegio por rol, no por confianza. `tools.json` es un índice generado desde los archivos YAML.
 
 **4. El merge gate.** Ningún humano en el loop. Cuando todas las capas acuerdan, el merge pasa solo, con rollback automático y auditoría completa de cada decisión.
 
@@ -132,7 +132,7 @@ El instalador descarga el paquete de la última release (`wekyt-hub.tar.gz`) de 
 
 ## Estado
 
-La Fase 1 está lista: el equipo dev, el almacén de tools, las plantillas, el instalador. La Fase 2 está lista: el CLI `wekyt` con su menú interactivo, auto-update en dos canales, y las 14 tools redefinidas como archivos YAML con implementaciones reales. Sigue: soporte multi-modelo y observabilidad, después el equipo de CI y el router.
+La Fase 1 está lista: el equipo dev, el almacén de tools, las plantillas, el instalador. La Fase 2 está lista: el CLI `wekyt` con su menú interactivo, auto-update en dos canales, y las 18 tools como handlers ejecutables con un validador que prueba que cada una corre. Sigue: soporte multi-modelo y observabilidad, después el equipo de CI y el router.
 
 ## Apoyo
 

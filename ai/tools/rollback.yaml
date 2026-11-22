@@ -1,6 +1,6 @@
 name: rollback
 title: Rollback
-version: 0.2.0
+version: 0.4.0
 kind: safety
 toolset: safety
 description: >-
@@ -48,6 +48,8 @@ outputs: >-
 implementation:
   implemented: true
   kind: command
+  handler: ai/tools/handlers/rollback.mjs
+  invoke: node ai/tools/handlers/rollback.mjs
   argv:
     - git
     - revert
@@ -95,6 +97,14 @@ errors:
     when: The commit is already reverted.
     retryable: false
     message: Commit already reverted. No further rollback is needed.
+  - code: NOT_ON_MAIN
+    when: The current branch is not main.
+    retryable: false
+    message: Rollback runs on the main branch. Switch to main first.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool.
+    retryable: false
+    message: This role may not use this tool.
 examples:
   - description: The orchestrator rolls back a merge that failed post merge checks.
     input:

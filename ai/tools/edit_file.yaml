@@ -1,0 +1,133 @@
+name: edit_file
+title: Edit a file
+version: 0.4.0
+kind: write
+toolset: write
+description: >-
+  Replace one exact piece of text inside a file, without rewriting the
+  whole file. The match must be unique, so an edit never lands on the
+  wrong occurrence by accident. Use this for surgical changes instead of
+  write_file, which replaces the entire content.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      path:
+        type: string
+        description: Path of the file, relative to the project root.
+      oldText:
+        type: string
+        description: Exact text to replace, including whitespace.
+      newText:
+        type: string
+        description: Replacement text. May be empty to delete oldText.
+      replaceAll:
+        type: boolean
+        description: Replace every occurrence instead of requiring a unique match. Defaults to false.
+    required:
+      - path
+      - oldText
+      - newText
+  outputSchema:
+    type: object
+    properties:
+      path:
+        type: string
+      replaced:
+        type: integer
+      matches:
+        type: integer
+    required:
+      - path
+      - replaced
+  annotations:
+    readOnlyHint: false
+    destructiveHint: true
+    idempotentHint: false
+    openWorldHint: false
+outputs: >-
+  An object with the path, the number of replacements made, and the number
+  of matches found. The file keeps its other content untouched.
+implementation:
+  implemented: true
+  kind: script
+  runtime: node:fs
+  handler: ai/tools/handlers/edit_file.mjs
+  invoke: node ai/tools/handlers/edit_file.mjs
+  authentication: none
+  timeoutSeconds: 30
+  notes: >-
+    Resolve the path inside the project root, reject absolute paths and
+    paths that escape the root through .. or symlinks, and reject binary
+    files. With replaceAll false, the old text must match exactly once,
+    or the tool fails with MULTIPLE_MATCHES or TEXT_NOT_FOUND.
+effects:
+  writes:
+    - The file at the given path, with one piece of text replaced.
+  deletes: []
+  externalCalls: []
+  reversible: false
+  idempotent: false
+  notes: >-
+    Repeating the call with the same old text fails, because the text is
+    already replaced. The previous content is only recoverable from git
+    history, so an edit is not reversible on its own.
+permissions:
+  orchestrator:
+    decision: deny
+    scope: The orchestrator delegates file edits to the dev.
+  architect:
+    decision: allow
+    scope: Architecture documents and design notes only.
+  dev:
+    decision: allow
+    scope: Files listed in the approved architecture only.
+  qa:
+    decision: deny
+    scope: QA never edits code.
+  security:
+    decision: deny
+    scope: Security reports, it does not edit.
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: FILE_NOT_FOUND
+    when: The path does not exist in the project.
+    retryable: false
+    message: File not found. Check the path against the repo tree and try again.
+  - code: PATH_OUTSIDE_PROJECT
+    when: The path is absolute or escapes the project root.
+    retryable: false
+    message: Path outside the project root. Use a path inside the project.
+  - code: TEXT_NOT_FOUND
+    when: The old text does not appear in the file.
+    retryable: false
+    message: Text not found. Check the exact text, including whitespace, and try again.
+  - code: MULTIPLE_MATCHES
+    when: The old text appears more than once and replaceAll is false.
+    retryable: false
+    message: Text matches more than once. Narrow it with surrounding lines, or set replaceAll to true.
+  - code: BINARY_FILE
+    when: The file contains binary content.
+    retryable: false
+    message: File is binary. Edit it with a tool that understands its format.
+  - code: SECRET_PATH
+    when: The path is a secret path (.env, *.pem, *.key, credentials, secret, .ssh, .aws, .gnupg).
+    retryable: false
+    message: Secret paths are off limits for every role.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool, or the scope forbids it.
+    retryable: false
+    message: This role may not use this tool. Ask the orchestrator to delegate it to a role that may.
+examples:
+  - description: The dev fixes one line in the CLI version file.
+    input:
+      path: cli/src/version.ts
+      oldText: "export const VERSION = '0.3.0';"
+      newText: "export const VERSION = '0.4.0';"
+    output:
+      path: cli/src/version.ts
+      replaced: 1
+      matches: 1

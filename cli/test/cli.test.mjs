@@ -247,7 +247,7 @@ test('validate passes on a good team and fails on a broken tools YAML', async ()
   assert.equal(installed.code, 0, installed.stderr);
   const ok = await wekyt(['validate'], project, env);
   assert.equal(ok.code, 0, ok.stderr);
-  assert.match(ok.stdout, /wekyt validate: ok \(14 tools, 0 skills, 0 errors\)/);
+  assert.match(ok.stdout, /wekyt validate: ok \(18 tools, 0 skills, 0 errors\)/);
 
   const file = path.join(project, 'ai', 'tools', 'read_file.yaml');
   const original = fs.readFileSync(file, 'utf8');

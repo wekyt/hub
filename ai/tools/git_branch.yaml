@@ -1,6 +1,6 @@
 name: git_branch
 title: Create branch
-version: 0.2.0
+version: 0.4.0
 kind: git
 toolset: git
 description: >-
@@ -47,6 +47,8 @@ outputs: >-
 implementation:
   implemented: true
   kind: command
+  handler: ai/tools/handlers/git_branch.mjs
+  invoke: node ai/tools/handlers/git_branch.mjs
   argv:
     - git
     - checkout
@@ -94,6 +96,14 @@ errors:
     when: Uncommitted changes would be carried to the new branch in a conflicting way.
     retryable: false
     message: Working tree has uncommitted changes. Commit or stash them first.
+  - code: BASE_NOT_FOUND
+    when: The base branch or commit does not exist in this repository.
+    retryable: false
+    message: Base not found. Check the base name against the branches in this repository.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool.
+    retryable: false
+    message: This role may not use this tool.
 examples:
   - description: The dev starts work on a task branch from main.
     input:

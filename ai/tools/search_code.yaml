@@ -1,6 +1,6 @@
 name: search_code
 title: Search code
-version: 0.2.0
+version: 0.4.0
 kind: search
 toolset: read
 description: >-
@@ -71,6 +71,8 @@ outputs: >-
 implementation:
   implemented: true
   kind: command
+  handler: ai/tools/handlers/search_code.mjs
+  invoke: node ai/tools/handlers/search_code.mjs
   argv:
     - rg
     - --no-heading
@@ -78,12 +80,14 @@ implementation:
     - --max-count
     - "50"
     - <query>
+    - .
   fallback:
     kind: command
     argv:
       - grep
       - -rn
       - <query>
+      - .
     when: rg is not installed.
   authentication: none
   timeoutSeconds: 60
@@ -124,6 +128,10 @@ errors:
     when: The search takes longer than timeoutSeconds.
     retryable: true
     message: Search timed out. Narrow the file pattern and try again.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool.
+    retryable: false
+    message: This role may not use this tool.
 examples:
   - description: Find every use of a tool id before changing its definition.
     input:

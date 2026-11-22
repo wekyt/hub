@@ -20,7 +20,7 @@ test('validate passes on the real tool definitions', async () => {
     timeout: 30000,
     env: {...process.env, WEKYT_NO_AUTO_UPDATE: '1'},
   });
-  assert.match(stdout, /wekyt validate: ok \(14 tools, 0 skills, 0 errors\)/);
+  assert.match(stdout, /wekyt validate: ok \(18 tools, 0 skills, 0 errors\)/);
 });
 
 test('validate passes when agent and skill files use CRLF line endings', async () => {
@@ -48,7 +48,7 @@ test('validate passes when agent and skill files use CRLF line endings', async (
       timeout: 30000,
       env: {...process.env, WEKYT_NO_AUTO_UPDATE: '1'},
     });
-    assert.match(stdout, /wekyt validate: ok \(14 tools, 1 skills, 0 errors\)/);
+    assert.match(stdout, /wekyt validate: ok \(18 tools, 1 skills, 0 errors\)/);
   } finally {
     fs.rmSync(tmp, {recursive: true, force: true});
   }
@@ -77,6 +77,51 @@ test('validate rejects readOnlyHint true with write effects', async () => {
   }
 });
 
+test('validate fails when a handler file is missing', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-tools-'));
+  try {
+    fs.cpSync(path.join(hubDir, 'ai', 'tools'), path.join(tmp, 'ai', 'tools'), {recursive: true});
+    fs.cpSync(path.join(hubDir, 'ai', 'agents'), path.join(tmp, 'ai', 'agents'), {recursive: true});
+    fs.writeFileSync(path.join(tmp, 'ai', 'VERSION'), '0.3.0\n');
+    fs.rmSync(path.join(tmp, 'ai', 'tools', 'handlers', 'read_file.mjs'));
+    await assert.rejects(
+      run(process.execPath, [bin, 'validate', '--project', tmp], {
+        timeout: 30000,
+        env: {...process.env, WEKYT_NO_AUTO_UPDATE: '1'},
+      }),
+      /handler file missing: ai\/tools\/handlers\/read_file\.mjs/,
+    );
+  } finally {
+    fs.rmSync(tmp, {recursive: true, force: true});
+  }
+});
+
+test('validate fails when handler ALLOWED_ROLES disagrees with the YAML', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-tools-'));
+  try {
+    fs.cpSync(path.join(hubDir, 'ai', 'tools'), path.join(tmp, 'ai', 'tools'), {recursive: true});
+    fs.cpSync(path.join(hubDir, 'ai', 'agents'), path.join(tmp, 'ai', 'agents'), {recursive: true});
+    fs.writeFileSync(path.join(tmp, 'ai', 'VERSION'), '0.3.0\n');
+    const file = path.join(tmp, 'ai', 'tools', 'handlers', 'read_file.mjs');
+    const original = fs.readFileSync(file, 'utf8');
+    const tampered = original.replace(
+      "const ALLOWED_ROLES = ['orchestrator', 'architect', 'dev', 'qa', 'security'];",
+      "const ALLOWED_ROLES = ['orchestrator', 'architect', 'dev', 'qa'];",
+    );
+    assert.notEqual(tampered, original);
+    fs.writeFileSync(file, tampered);
+    await assert.rejects(
+      run(process.execPath, [bin, 'validate', '--project', tmp], {
+        timeout: 30000,
+        env: {...process.env, WEKYT_NO_AUTO_UPDATE: '1'},
+      }),
+      /ALLOWED_ROLES \[orchestrator, architect, dev, qa\] disagrees with YAML allowed roles/,
+    );
+  } finally {
+    fs.rmSync(tmp, {recursive: true, force: true});
+  }
+});
+
 test('validate --generate regenerates tools.json and the permissions matrix', async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wekyt-tools-'));
   try {
@@ -88,9 +133,9 @@ test('validate --generate regenerates tools.json and the permissions matrix', as
       timeout: 30000,
       env: {...process.env, WEKYT_NO_AUTO_UPDATE: '1'},
     });
-    assert.match(stdout, /regenerated tools\.json and permissions\.md from 14 tool definitions/);
+    assert.match(stdout, /regenerated tools\.json and permissions\.md from 18 tool definitions/);
     const registry = JSON.parse(fs.readFileSync(path.join(tmp, 'ai', 'tools', 'tools.json'), 'utf8'));
-    assert.equal(registry.tools.length, 14);
+    assert.equal(registry.tools.length, 18);
     const matrix = fs.readFileSync(path.join(tmp, 'ai', 'tools', 'permissions.md'), 'utf8');
     assert.match(matrix, /\| read_file \|/);
     assert.match(matrix, /## Hard rules/);
@@ -101,5 +146,5 @@ test('validate --generate regenerates tools.json and the permissions matrix', as
 
 test('dev wrapper script delegates to the bundled validator', async () => {
   const {stdout} = await run(process.execPath, [wrapper], {timeout: 60000});
-  assert.match(stdout, /wekyt validate: ok \(14 tools, 0 skills, 0 errors\)/);
+  assert.match(stdout, /wekyt validate: ok \(18 tools, 0 skills, 0 errors\)/);
 });

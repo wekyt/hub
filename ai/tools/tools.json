@@ -3,116 +3,184 @@
   "tools": [
     {
       "description": "Read the contents of a file in the repository and return it as text. Use it before deciding anything about existing code, and to verify what a file actually contains instead of assuming it. It never modifies state: it reads only, and it refuses paths outside the project root.",
+      "handler": "ai/tools/handlers/read_file.mjs",
       "id": "read_file",
+      "invoke": "node ai/tools/handlers/read_file.mjs",
       "kind": "read",
       "name": "Read file",
       "toolset": "read",
-      "version": "0.2.0"
+      "version": "0.4.0"
     },
     {
       "description": "Create or overwrite a file in the repository with the given text content. Only the architect and the dev may use it, each within a narrow scope: the architect writes only architecture documents, the dev writes only files listed in the approved architecture. Overwriting destroys the previous content, so it is not reversible except through git history.",
+      "handler": "ai/tools/handlers/write_file.mjs",
       "id": "write_file",
+      "invoke": "node ai/tools/handlers/write_file.mjs",
       "kind": "write",
       "name": "Write file",
       "toolset": "write",
-      "version": "0.2.0"
+      "version": "0.4.0"
+    },
+    {
+      "description": "Replace one exact piece of text inside a file, without rewriting the whole file. The match must be unique, so an edit never lands on the wrong occurrence by accident. Use this for surgical changes instead of write_file, which replaces the entire content.",
+      "handler": "ai/tools/handlers/edit_file.mjs",
+      "id": "edit_file",
+      "invoke": "node ai/tools/handlers/edit_file.mjs",
+      "kind": "write",
+      "name": "Edit a file",
+      "toolset": "write",
+      "version": "0.4.0"
+    },
+    {
+      "description": "List files inside the project, filtered by a glob pattern. It answers which files exist before a read, a search, or an edit. The listing stays inside the project root, skips hidden dependency directories, and never returns secret paths.",
+      "handler": "ai/tools/handlers/list_files.mjs",
+      "id": "list_files",
+      "invoke": "node ai/tools/handlers/list_files.mjs",
+      "kind": "read",
+      "name": "List project files",
+      "toolset": "read",
+      "version": "0.4.0"
     },
     {
       "description": "Search the codebase by text, symbol, or file pattern and return matching lines with file and line number. Use it to understand existing code before planning, building, or reviewing. It is read only and never modifies state, and it searches only inside the project root.",
+      "handler": "ai/tools/handlers/search_code.mjs",
       "id": "search_code",
+      "invoke": "node ai/tools/handlers/search_code.mjs",
       "kind": "search",
       "name": "Search code",
       "toolset": "read",
-      "version": "0.2.0"
+      "version": "0.4.0"
     },
     {
       "description": "Run the test suite or a selected test file and return pass or fail with output. It is the objective gate for QA and the local check for the dev. The command run is the one the project declares in package.json under scripts.test. When the project declares no test command, the tool reports not configured instead of inventing a result.",
+      "handler": "ai/tools/handlers/run_tests.mjs",
       "id": "run_tests",
+      "invoke": "node ai/tools/handlers/run_tests.mjs",
       "kind": "test",
       "name": "Run tests",
       "toolset": "test",
-      "version": "0.2.0"
+      "version": "0.4.0"
     },
     {
       "description": "Run the linter and return violations with file and line. A failing linter blocks the pull request. The command run is the one the project declares in package.json under scripts.lint. When the project declares no linter command, the tool reports not configured instead of inventing a result.",
+      "handler": "ai/tools/handlers/run_linter.mjs",
       "id": "run_linter",
+      "invoke": "node ai/tools/handlers/run_linter.mjs",
       "kind": "test",
       "name": "Run linter",
       "toolset": "test",
-      "version": "0.2.0"
+      "version": "0.4.0"
     },
     {
       "description": "Run the static checker, including type checks and security checks, and return findings with file and line. The command run is the one the project declares in package.json, scripts.check first and scripts.typecheck second. When the project declares neither, the tool reports not configured instead of inventing a result.",
+      "handler": "ai/tools/handlers/run_checker.mjs",
       "id": "run_checker",
+      "invoke": "node ai/tools/handlers/run_checker.mjs",
       "kind": "test",
       "name": "Run checker",
       "toolset": "test",
-      "version": "0.2.0"
+      "version": "0.4.0"
     },
     {
-      "description": "Search the public web for documentation, API references, and known vulnerabilities. It is read only and never used to fetch secrets or private data. In v0.2.0 this tool is defined but not implemented: the CLI ships no search provider, so calls return NOT_IMPLEMENTED instead of a faked result. A provider is added in a later version.",
+      "description": "Run the project build declared in package.json scripts.build, and report whether it passed. The build is the gate before a pull request opens: no branch merges while the build is red. Output is capped, so a noisy build never floods the agent context.",
+      "handler": "ai/tools/handlers/run_build.mjs",
+      "id": "run_build",
+      "invoke": "node ai/tools/handlers/run_build.mjs",
+      "kind": "test",
+      "name": "Run the project build",
+      "toolset": "test",
+      "version": "0.4.0"
+    },
+    {
+      "description": "Search the public web for documentation, API references, and known vulnerabilities. It is read only and never used to fetch secrets or private data. The default provider is the DuckDuckGo Instant Answer API, which needs no key. When no provider is configured, calls return NOT_IMPLEMENTED instead of a faked result.",
+      "handler": "ai/tools/handlers/web_search.mjs",
       "id": "web_search",
+      "invoke": "node ai/tools/handlers/web_search.mjs",
       "kind": "search",
       "name": "Web search",
       "toolset": "read",
-      "version": "0.2.0"
+      "version": "0.4.0"
+    },
+    {
+      "description": "Fetch the text content of one public URL, for example a documentation page or a changelog. It reads text only and never runs scripts, never sends credentials, and never follows a URL that carries a secret. Use this after web_search, when a result page itself holds the answer.",
+      "handler": "ai/tools/handlers/fetch_url.mjs",
+      "id": "fetch_url",
+      "invoke": "node ai/tools/handlers/fetch_url.mjs",
+      "kind": "search",
+      "name": "Fetch a public URL",
+      "toolset": "read",
+      "version": "0.4.0"
     },
     {
       "description": "Create a git branch for a task and switch to it. Branch names follow the task id. It never switches to or modifies the main branch directly, and it never creates a branch named main. The branch starts at the given base, which defaults to main.",
+      "handler": "ai/tools/handlers/git_branch.mjs",
       "id": "git_branch",
+      "invoke": "node ai/tools/handlers/git_branch.mjs",
       "kind": "git",
       "name": "Create branch",
       "toolset": "git",
-      "version": "0.2.0"
+      "version": "0.4.0"
     },
     {
       "description": "Commit staged changes on the current branch with a clear message. It commits only what is already staged: staging is a separate, deliberate step, so nothing is committed by accident. Every fix for a QA or security finding references the finding id in the message.",
+      "handler": "ai/tools/handlers/git_commit.mjs",
       "id": "git_commit",
+      "invoke": "node ai/tools/handlers/git_commit.mjs",
       "kind": "git",
       "name": "Commit changes",
       "toolset": "git",
-      "version": "0.2.0"
+      "version": "0.4.0"
     },
     {
       "description": "Push the current branch to the remote. It pushes the task branch only and never pushes directly to the main branch. A force push is refused: history on a shared branch is rewritten only through a revert, never by force.",
+      "handler": "ai/tools/handlers/git_push.mjs",
       "id": "git_push",
+      "invoke": "node ai/tools/handlers/git_push.mjs",
       "kind": "git",
       "name": "Push branch",
       "toolset": "git",
-      "version": "0.2.0"
+      "version": "0.4.0"
     },
     {
       "description": "Open a pull request from a branch with a description, the changed files, and test evidence. QA is explicitly forbidden from using this tool even though it exists in the registry: when QA finds a fixable problem, it reports the finding and returns the task to the dev through the orchestrator. It never opens a pull request itself.",
+      "handler": "ai/tools/handlers/open_pull_request.mjs",
       "id": "open_pull_request",
+      "invoke": "node ai/tools/handlers/open_pull_request.mjs",
       "kind": "git",
       "name": "Open pull request",
       "toolset": "git",
-      "version": "0.2.0"
+      "version": "0.4.0"
     },
     {
       "description": "Merge an approved pull request into the main branch. Only the merge step of the orchestrator may use this tool, and only when architect, dev, QA with tests green, and security all agree. Partial agreement is not enough. A merge without an audit entry written before it runs is forbidden, and the audit entry must record the agreement of every layer.",
+      "handler": "ai/tools/handlers/merge_pull_request.mjs",
       "id": "merge_pull_request",
+      "invoke": "node ai/tools/handlers/merge_pull_request.mjs",
       "kind": "git",
       "name": "Merge pull request",
       "toolset": "git",
-      "version": "0.2.0"
+      "version": "0.4.0"
     },
     {
       "description": "Revert a merged commit and restore the previous state automatically when a merge fails, post merge checks fail, or a regression is detected after merge. Only the orchestrator may use this tool. It reverts with a new commit: it never rewrites shared history.",
+      "handler": "ai/tools/handlers/rollback.mjs",
       "id": "rollback",
+      "invoke": "node ai/tools/handlers/rollback.mjs",
       "kind": "safety",
       "name": "Rollback",
       "toolset": "safety",
-      "version": "0.2.0"
+      "version": "0.4.0"
     },
     {
       "description": "Append an audit entry recording a decision, delegation, approval, rejection, merge, or rollback, with task id, actor, evidence, and timestamp. Every agent uses this tool. The log is append only: no agent can edit or delete an audit entry, and a merge without an audit entry written before it runs is forbidden.",
+      "handler": "ai/tools/handlers/audit_log.mjs",
       "id": "audit_log",
+      "invoke": "node ai/tools/handlers/audit_log.mjs",
       "kind": "safety",
       "name": "Audit log",
       "toolset": "safety",
-      "version": "0.2.0"
+      "version": "0.4.0"
     }
   ],
-  "version": 2
+  "version": 3
 }

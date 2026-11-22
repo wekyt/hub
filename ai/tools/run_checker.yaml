@@ -1,6 +1,6 @@
 name: run_checker
 title: Run checker
-version: 0.2.0
+version: 0.4.0
 kind: test
 toolset: test
 description: >-
@@ -82,6 +82,8 @@ outputs: >-
 implementation:
   implemented: true
   kind: command
+  handler: ai/tools/handlers/run_checker.mjs
+  invoke: node ai/tools/handlers/run_checker.mjs
   argv:
     - npm
     - run
@@ -129,6 +131,10 @@ errors:
     when: The run takes longer than timeoutSeconds.
     retryable: true
     message: Check timed out. Check a single directory, or raise timeoutSeconds.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool.
+    retryable: false
+    message: This role may not use this tool.
 examples:
   - description: Security runs the checker on a pull request branch.
     input:

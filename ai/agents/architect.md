@@ -7,6 +7,9 @@ tools:
   - search_code
   - web_search
   - audit_log
+  - edit_file
+  - fetch_url
+  - list_files
 model: strong
 ---
 

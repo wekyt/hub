@@ -1,0 +1,130 @@
+name: fetch_url
+title: Fetch a public URL
+version: 0.4.0
+kind: search
+toolset: read
+description: >-
+  Fetch the text content of one public URL, for example a documentation
+  page or a changelog. It reads text only and never runs scripts, never
+  sends credentials, and never follows a URL that carries a secret. Use
+  this after web_search, when a result page itself holds the answer.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      url:
+        type: string
+        description: Public http or https URL to fetch.
+      maxChars:
+        type: integer
+        minimum: 1000
+        maximum: 100000
+        default: 20000
+        description: Maximum number of characters returned.
+    required:
+      - url
+  outputSchema:
+    type: object
+    properties:
+      url:
+        type: string
+      status:
+        type: integer
+      contentType:
+        type: string
+      content:
+        type: string
+      bytes:
+        type: integer
+      truncated:
+        type: boolean
+    required:
+      - url
+      - status
+      - content
+  annotations:
+    readOnlyHint: true
+    destructiveHint: false
+    idempotentHint: true
+    openWorldHint: true
+outputs: >-
+  An object with the URL, the HTTP status, the content type, and the text
+  content, truncated to maxChars when longer. Binary responses are
+  rejected, never returned as text.
+implementation:
+  implemented: true
+  kind: api
+  handler: ai/tools/handlers/fetch_url.mjs
+  invoke: node ai/tools/handlers/fetch_url.mjs
+  method: GET
+  url: <url>
+  authentication: none
+  timeoutSeconds: 30
+  notes: >-
+    The URL comes from the input. Only http and https are allowed, and a
+    URL that embeds userinfo or a secret query is rejected. Redirects are
+    followed up to 5 times. The response is capped at 5 MB and must be
+    text, JSON, or XML.
+effects:
+  writes: []
+  deletes: []
+  externalCalls: []
+  reversible: true
+  idempotent: true
+permissions:
+  orchestrator:
+    decision: allow
+    scope: Public documentation and changelog pages.
+  architect:
+    decision: allow
+    scope: Public documentation and API references.
+  dev:
+    decision: deny
+    scope: The dev works with local code, it does not fetch remote pages.
+  qa:
+    decision: deny
+    scope: QA verifies local behavior, it does not fetch remote pages.
+  security:
+    decision: allow
+    scope: Public advisories and vulnerability pages.
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: INVALID_URL
+    when: The URL is not a public http or https URL, or it embeds credentials.
+    retryable: false
+    message: Invalid URL. Use a public http or https URL with no credentials in it.
+  - code: FETCH_FAILED
+    when: The request fails, the host does not resolve, or the status is 4xx or 5xx.
+    retryable: true
+    message: Fetch failed. Check the URL and try again.
+  - code: FETCH_TIMEOUT
+    when: The request takes longer than timeoutSeconds.
+    retryable: true
+    message: Fetch timed out. Try again, or use a smaller page.
+  - code: RESPONSE_TOO_LARGE
+    when: The response is larger than 5 MB.
+    retryable: false
+    message: Response too large. Fetch a smaller page.
+  - code: UNSUPPORTED_CONTENT_TYPE
+    when: The response is not text, JSON, or XML.
+    retryable: false
+    message: Unsupported content type. Fetch a text page instead.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool.
+    retryable: false
+    message: This role may not use this tool.
+examples:
+  - description: The architect fetches the Ink changelog page.
+    input:
+      url: https://github.com/vadimdemedes/ink/blob/main/readme.md
+      maxChars: 20000
+    output:
+      url: https://github.com/vadimdemedes/ink/blob/main/readme.md
+      status: 200
+      contentType: text/plain
+      content: "# Ink\n"
+      bytes: 6
+      truncated: false

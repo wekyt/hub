@@ -1,6 +1,6 @@
 name: open_pull_request
 title: Open pull request
-version: 0.2.0
+version: 0.4.0
 kind: git
 toolset: git
 description: >-
@@ -61,6 +61,8 @@ outputs: >-
 implementation:
   implemented: true
   kind: api
+  handler: ai/tools/handlers/open_pull_request.mjs
+  invoke: node ai/tools/handlers/open_pull_request.mjs
   method: POST
   url: https://api.github.com/repos/{owner}/{repo}/pulls
   fallback:
@@ -121,6 +123,14 @@ errors:
     when: The base branch does not exist on the remote.
     retryable: false
     message: Base branch not found on the remote. Check the base name.
+  - code: NO_GITHUB_REMOTE
+    when: The project has no GitHub remote configured.
+    retryable: false
+    message: No GitHub remote configured. Set the origin remote to a github.com repository first.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool.
+    retryable: false
+    message: This role may not use this tool.
 examples:
   - description: The dev opens a pull request with test evidence.
     input:

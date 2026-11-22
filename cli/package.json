@@ -1,6 +1,6 @@
 {
   "name": "wekyt",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "packageManager": "pnpm@10.34.9",
   "description": "Agent teams that build, maintain, and support software. Zero humans in the loop. CLI for the wekyt hub.",
   "license": "MIT",

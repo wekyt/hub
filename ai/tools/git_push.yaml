@@ -1,6 +1,6 @@
 name: git_push
 title: Push branch
-version: 0.2.0
+version: 0.4.0
 kind: git
 toolset: git
 description: >-
@@ -45,6 +45,8 @@ outputs: >-
 implementation:
   implemented: true
   kind: command
+  handler: ai/tools/handlers/git_push.mjs
+  invoke: node ai/tools/handlers/git_push.mjs
   argv:
     - git
     - push
@@ -97,6 +99,10 @@ errors:
     when: The branch has no upstream and no remote is configured.
     retryable: false
     message: No remote configured. Set the remote for this project first.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool.
+    retryable: false
+    message: This role may not use this tool.
 examples:
   - description: The dev pushes its task branch after committing.
     input:

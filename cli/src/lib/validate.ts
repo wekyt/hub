@@ -4,6 +4,7 @@
 // CLI so there is only one validator to keep correct.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import {execFileSync} from 'node:child_process';
 import * as YAML from 'yaml';
 
 export interface ValidationResult {
@@ -28,8 +29,8 @@ const KINDS = ['read', 'write', 'search', 'test', 'git', 'safety'];
 const TOOLSETS = ['read', 'write', 'git', 'test', 'safety'];
 const IMPL_KINDS = ['api', 'command', 'script', 'mcp_passthrough'];
 const TOOL_ORDER = [
-  'read_file', 'write_file', 'search_code', 'run_tests', 'run_linter', 'run_checker',
-  'web_search', 'git_branch', 'git_commit', 'git_push', 'open_pull_request',
+  'read_file', 'write_file', 'edit_file', 'list_files', 'search_code', 'run_tests', 'run_linter', 'run_checker',
+  'run_build', 'web_search', 'fetch_url', 'git_branch', 'git_commit', 'git_push', 'open_pull_request',
   'merge_pull_request', 'rollback', 'audit_log',
 ];
 const HARNESSES = ['claude', 'cursor', 'codex', 'gemini'];
@@ -66,7 +67,112 @@ function checkSchema(c: Checker, schema: any, where: string): void {
   }
 }
 
-function validateTool(c: Checker, doc: YamlDoc, fileName: string): YamlDoc | null {
+function extractStringLiteral(source: string, constName: string): string | null {
+  const m = source.match(new RegExp(`const ${constName} = '([^']*)';`));
+  return m ? m[1] : null;
+}
+
+function extractNumberLiteral(source: string, constName: string): number | null {
+  const m = source.match(new RegExp(`const ${constName} = (\\d+);`));
+  return m ? Number(m[1]) : null;
+}
+
+function extractArrayLiteral(source: string, constName: string): string[] | null {
+  const m = source.match(new RegExp(`const ${constName} = \\[([\\s\\S]*?)\\];`));
+  if (!m) return null;
+  return [...m[1].matchAll(/'([^']*)'/g)].map((x) => x[1]);
+}
+
+function sameSet(a: string[], b: string[]): boolean {
+  return a.length === b.length && [...a].sort().join(',') === [...b].sort().join(',');
+}
+
+/**
+ * A tool that claims implemented: true must ship a real handler, and the
+ * handler must agree with the YAML on every contract point: file name,
+ * invocation, tool id, allowed roles, timeout, underlying command, and
+ * fallback command. A name alone proves nothing, so the check reads the
+ * handler source instead of trusting the YAML.
+ */
+function checkHandler(c: Checker, doc: YamlDoc, fileName: string, toolsDir: string): void {
+  const impl = doc.implementation;
+  const where = fileName;
+  const handler = impl.handler;
+  if (typeof handler !== 'string' || !/^ai\/tools\/handlers\/[A-Za-z0-9_.-]+\.mjs$/.test(handler)) {
+    c.fail(`${where}: implementation.handler must be a path ai/tools/handlers/<tool>.mjs`);
+    return;
+  }
+  if (handler !== `ai/tools/handlers/${doc.name}.mjs`) {
+    c.fail(`${where}: implementation.handler must be ai/tools/handlers/${doc.name}.mjs, got ${handler}`);
+  }
+  if (impl.invoke !== `node ${handler}`) {
+    c.fail(`${where}: implementation.invoke must be \`node ${handler}\``);
+  }
+  const handlerPath = path.join(toolsDir, 'handlers', `${doc.name}.mjs`);
+  if (!fs.existsSync(handlerPath)) {
+    c.fail(`${where}: handler file missing: ${handler}`);
+    return;
+  }
+  try {
+    execFileSync(process.execPath, ['--check', handlerPath], {stdio: 'pipe'});
+  } catch {
+    c.fail(`${where}: handler ${handler} does not parse (node --check failed)`);
+    return;
+  }
+  const source = fs.readFileSync(handlerPath, 'utf8');
+  const toolId = extractStringLiteral(source, 'TOOL_ID');
+  if (toolId !== doc.name) {
+    c.fail(`${where}: handler TOOL_ID must be '${doc.name}', got ${toolId === null ? 'none' : `'${toolId}'`}`);
+  }
+  const allowedRoles = extractArrayLiteral(source, 'ALLOWED_ROLES');
+  const yamlAllowed = Object.keys(doc.permissions || {}).filter(
+    (r) => doc.permissions[r]?.decision === 'allow',
+  );
+  if (allowedRoles === null) {
+    c.fail(`${where}: handler must declare ALLOWED_ROLES`);
+  } else {
+    if (allowedRoles.includes('judge')) {
+      c.fail(`${where}: handler ALLOWED_ROLES must never include judge`);
+    }
+    if (!sameSet(allowedRoles, yamlAllowed)) {
+      c.fail(`${where}: handler ALLOWED_ROLES [${allowedRoles.join(', ')}] disagrees with YAML allowed roles [${yamlAllowed.join(', ')}]`);
+    }
+  }
+  const timeout = extractNumberLiteral(source, 'TIMEOUT_SECONDS');
+  if (timeout !== impl.timeoutSeconds) {
+    c.fail(`${where}: handler TIMEOUT_SECONDS (${timeout === null ? 'missing' : timeout}) must equal implementation.timeoutSeconds (${impl.timeoutSeconds})`);
+  }
+  const underlying = impl.kind === 'command'
+    ? extractArrayLiteral(source, 'UNDERLYING_COMMAND')
+    : extractStringLiteral(source, 'UNDERLYING_COMMAND');
+  if (underlying === null) {
+    c.fail(`${where}: handler must declare UNDERLYING_COMMAND`);
+  } else if (impl.kind === 'command') {
+    const argv = impl.argv as string[];
+    if (JSON.stringify(underlying) !== JSON.stringify(argv)) {
+      c.fail(`${where}: handler UNDERLYING_COMMAND [${(underlying as string[]).join(', ')}] disagrees with implementation.argv [${argv.join(', ')}]`);
+    }
+  } else if (impl.kind === 'api') {
+    const cmd = underlying as string;
+    if (!cmd.includes(impl.method) || !cmd.includes(impl.url)) {
+      c.fail(`${where}: handler UNDERLYING_COMMAND '${cmd}' must name the api method ${impl.method} and url ${impl.url}`);
+    }
+  } else if (impl.kind === 'script' && typeof impl.runtime === 'string') {
+    if (!(underlying as string).startsWith(impl.runtime)) {
+      c.fail(`${where}: handler UNDERLYING_COMMAND '${underlying}' must start with the script runtime ${impl.runtime}`);
+    }
+  }
+  if (impl.fallback && Array.isArray(impl.fallback.argv)) {
+    const fallback = extractArrayLiteral(source, 'FALLBACK_COMMAND');
+    if (fallback === null) {
+      c.fail(`${where}: handler must declare FALLBACK_COMMAND for the YAML fallback`);
+    } else if (JSON.stringify(fallback) !== JSON.stringify(impl.fallback.argv)) {
+      c.fail(`${where}: handler FALLBACK_COMMAND [${fallback.join(', ')}] disagrees with implementation.fallback.argv [${impl.fallback.argv.join(', ')}]`);
+    }
+  }
+}
+
+function validateTool(c: Checker, doc: YamlDoc, fileName: string, toolsDir: string): YamlDoc | null {
   const where = fileName;
   const id = doc.name;
   if (typeof id !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(id)) {
@@ -101,6 +207,7 @@ function validateTool(c: Checker, doc: YamlDoc, fileName: string): YamlDoc | nul
         c.fail(`${where}: an unimplemented tool must say so in implementation.note and name no provider`);
       }
       if (impl.argv) c.fail(`${where}: an unimplemented tool must not declare argv, or it fakes an implementation`);
+      if (impl.handler) c.fail(`${where}: an unimplemented tool must not reference a handler`);
     } else if (impl.implemented === true) {
       if (impl.kind === 'command' && (!Array.isArray(impl.argv) || impl.argv.length === 0)) {
         c.fail(`${where}: a command implementation needs an exact argv`);
@@ -111,6 +218,7 @@ function validateTool(c: Checker, doc: YamlDoc, fileName: string): YamlDoc | nul
       if (impl.kind === 'api' && (!impl.method || !impl.url)) {
         c.fail(`${where}: an api implementation needs method and url`);
       }
+      checkHandler(c, doc, fileName, toolsDir);
     } else {
       c.fail(`${where}: implementation.implemented must be true or false`);
     }
@@ -213,6 +321,9 @@ function checkToolsJson(c: Checker, toolsDir: string, tools: YamlDoc[]): void {
     c.fail('tools/tools.json: tools must be a list');
     return;
   }
+  if (registry.version !== 3) {
+    c.fail(`tools/tools.json: version must be 3, got ${String(registry.version)}`);
+  }
   const byId = new Map<string, any>();
   for (const t of registry.tools) {
     if (typeof t.id === 'string') byId.set(t.id, t);
@@ -223,6 +334,8 @@ function checkToolsJson(c: Checker, toolsDir: string, tools: YamlDoc[]): void {
       c.fail(`tools/tools.json: missing entry for ${tool.name}`);
     } else if (entry.version !== tool.version) {
       c.fail(`tools/tools.json: version mismatch for ${tool.name}: registry has ${entry.version}, ${tool.name}.yaml has ${tool.version}`);
+    } else if (entry.handler !== tool.implementation.handler || entry.invoke !== tool.implementation.invoke) {
+      c.fail(`tools/tools.json: handler mismatch for ${tool.name}: registry has ${String(entry.handler)} / ${String(entry.invoke)}, ${tool.name}.yaml has ${tool.implementation.handler} / ${tool.implementation.invoke}`);
     }
   }
   for (const id of byId.keys()) {
@@ -366,7 +479,7 @@ export function validateProject(projectDir: string): ValidationResult {
         c.fail(`${file}: invalid YAML: ${e instanceof Error ? e.message : String(e)}`);
         continue;
       }
-      const valid = validateTool(c, doc, file);
+      const valid = validateTool(c, doc, file, toolsDir);
       if (valid) tools.push(valid);
     }
     const ids = tools.map((t) => t.name);
@@ -405,7 +518,7 @@ export function generateRegistry(projectDir: string): {tools: number} {
   const tools: YamlDoc[] = [];
   for (const file of files) {
     const doc = YAML.parse(fs.readFileSync(path.join(toolsDir, file), 'utf8'));
-    const valid = validateTool(c, doc, file);
+    const valid = validateTool(c, doc, file, toolsDir);
     if (valid) tools.push(valid);
   }
   if (c.errors.length > 0) {
@@ -416,13 +529,15 @@ export function generateRegistry(projectDir: string): {tools: number} {
     description: 'Tool registry for the wekyt hub. Generated from ai/tools/*.yaml, do not edit by hand. Agents discover tools by description. No tool belongs to an agent. Access is granted per role under least privilege in permissions.md.',
     tools: ordered.map((t) => ({
       description: t.description.replace(/\s+/g, ' ').trim(),
+      handler: t.implementation.handler,
       id: t.name,
+      invoke: t.implementation.invoke,
       kind: t.kind,
       name: t.title,
       toolset: t.toolset,
       version: t.version,
     })),
-    version: 2,
+    version: 3,
   };
   fs.writeFileSync(path.join(toolsDir, 'tools.json'), JSON.stringify(registry, null, 2) + '\n');
 

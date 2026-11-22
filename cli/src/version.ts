@@ -1,5 +1,5 @@
 // wekyt CLI version. Single source of truth for the bundled binary.
-export const VERSION = '0.3.0';
+export const VERSION = '0.4.0';
 export const HUB_REPO = 'wekyt/hub';
 export const RELEASE_TARBALL_NAME = 'wekyt-hub.tar.gz';
 export const RELEASE_CHECKSUMS_NAME = 'SHA256SUMS';

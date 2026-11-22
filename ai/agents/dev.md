@@ -13,6 +13,9 @@ tools:
   - git_push
   - open_pull_request
   - audit_log
+  - edit_file
+  - list_files
+  - run_build
 model: balanced
 ---
 

@@ -1,6 +1,6 @@
 name: read_file
 title: Read file
-version: 0.2.0
+version: 0.4.0
 kind: read
 toolset: read
 description: >-
@@ -56,13 +56,15 @@ implementation:
   implemented: true
   kind: script
   runtime: node:fs
-  handler: >-
+  handler: ai/tools/handlers/read_file.mjs
+  invoke: node ai/tools/handlers/read_file.mjs
+  authentication: none
+  timeoutSeconds: 30
+  notes: >-
     Resolve the path inside the project root, reject absolute paths and
     paths that escape the root through .. or symlinks, then read with
     fs.readFileSync(path, 'utf8'). Files larger than maxChars are truncated
     and flagged. Binary content (NUL byte in the first 8 KB) is rejected.
-  authentication: none
-  timeoutSeconds: 30
 effects:
   writes: []
   deletes: []
@@ -96,6 +98,14 @@ errors:
     when: The file contains binary content.
     retryable: false
     message: File is binary. Read it with a tool that understands its format.
+  - code: SECRET_PATH
+    when: The path is a secret path (.env, *.pem, *.key, credentials, secret, .ssh, .aws, .gnupg).
+    retryable: false
+    message: Secret paths are off limits for every role.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool.
+    retryable: false
+    message: This role may not use this tool.
 examples:
   - description: Read an agent file before delegating work to that role.
     input:

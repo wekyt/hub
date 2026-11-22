@@ -1,0 +1,120 @@
+name: list_files
+title: List project files
+version: 0.4.0
+kind: read
+toolset: read
+description: >-
+  List files inside the project, filtered by a glob pattern. It answers
+  which files exist before a read, a search, or an edit. The listing stays
+  inside the project root, skips hidden dependency directories, and never
+  returns secret paths.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      pattern:
+        type: string
+        description: Glob pattern, relative to the project root. Supports **, *, and ?. Defaults to **/*.mjs when omitted.
+      includeHidden:
+        type: boolean
+        description: Include dotfiles and dot-directories. Defaults to false.
+      maxResults:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 100
+        description: Maximum number of files returned.
+    required: []
+  outputSchema:
+    type: object
+    properties:
+      pattern:
+        type: string
+      files:
+        type: array
+        items:
+          type: object
+          properties:
+            path:
+              type: string
+            size:
+              type: integer
+            modified:
+              type: string
+      truncated:
+        type: boolean
+    required:
+      - pattern
+      - files
+  annotations:
+    readOnlyHint: true
+    destructiveHint: false
+    idempotentHint: true
+    openWorldHint: false
+outputs: >-
+  An object with the pattern and a list of files (relative path, size in
+  bytes, and last modified time), sorted by path. truncated is true when
+  more files match than maxResults.
+implementation:
+  implemented: true
+  kind: script
+  runtime: node:fs
+  handler: ai/tools/handlers/list_files.mjs
+  invoke: node ai/tools/handlers/list_files.mjs
+  authentication: none
+  timeoutSeconds: 30
+  notes: >-
+    Walk the project root recursively, match each relative path against the
+    glob, and skip .git, node_modules, symlinks, and secret paths. The
+    pattern must stay inside the project root.
+effects:
+  writes: []
+  deletes: []
+  externalCalls: []
+  reversible: true
+  idempotent: true
+permissions:
+  orchestrator:
+    decision: allow
+    scope: Project files.
+  architect:
+    decision: allow
+    scope: Project files.
+  dev:
+    decision: allow
+    scope: Project files.
+  qa:
+    decision: allow
+    scope: Project files.
+  security:
+    decision: allow
+    scope: Project files.
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: PATTERN_INVALID
+    when: The pattern is empty or escapes the project root.
+    retryable: false
+    message: Invalid pattern. Use a glob inside the project root.
+  - code: PATH_OUTSIDE_PROJECT
+    when: The pattern resolves outside the project root.
+    retryable: false
+    message: Path outside the project root. Use a path inside the project.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool.
+    retryable: false
+    message: This role may not use this tool.
+examples:
+  - description: The dev lists every test file before running the suite.
+    input:
+      pattern: "**/*.test.mjs"
+      maxResults: 50
+    output:
+      pattern: "**/*.test.mjs"
+      files:
+        - path: cli/test/tools.test.mjs
+          size: 14211
+          modified: "2026-11-21T21:00:00.000Z"
+      truncated: false

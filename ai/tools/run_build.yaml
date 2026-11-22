@@ -1,0 +1,119 @@
+name: run_build
+title: Run the project build
+version: 0.4.0
+kind: test
+toolset: test
+description: >-
+  Run the project build declared in package.json scripts.build, and report
+  whether it passed. The build is the gate before a pull request opens:
+  no branch merges while the build is red. Output is capped, so a noisy
+  build never floods the agent context.
+mcp:
+  inputSchema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    type: object
+    properties:
+      args:
+        type: array
+        items:
+          type: string
+        description: Extra arguments appended to the build command.
+      timeoutSeconds:
+        type: integer
+        minimum: 10
+        maximum: 1800
+        default: 600
+    required: []
+  outputSchema:
+    type: object
+    properties:
+      passed:
+        type: boolean
+      exitCode:
+        type: integer
+      stdout:
+        type: string
+      stderr:
+        type: string
+      command:
+        type: string
+    required:
+      - passed
+      - exitCode
+  annotations:
+    readOnlyHint: false
+    destructiveHint: false
+    idempotentHint: true
+    openWorldHint: false
+outputs: >-
+  An object with passed, the exit code, the command that ran, and the
+  capped stdout and stderr. passed is true only when the exit code is 0.
+implementation:
+  implemented: true
+  kind: command
+  handler: ai/tools/handlers/run_build.mjs
+  invoke: node ai/tools/handlers/run_build.mjs
+  argv:
+    - npm
+    - run
+    - build
+  authentication: none
+  timeoutSeconds: 600
+  notes: >-
+    The project declares its build command in package.json scripts.build;
+    `npm run build` runs it. args are appended when given. When
+    scripts.build is missing, the tool returns TOOL_NOT_CONFIGURED and runs
+    nothing. The build may write build output and cache files, which is
+    why readOnlyHint is false.
+effects:
+  writes:
+    - Build output and cache files produced by the build.
+  deletes: []
+  externalCalls: []
+  reversible: true
+  idempotent: true
+permissions:
+  orchestrator:
+    decision: deny
+    scope: The orchestrator delegates verification to QA.
+  architect:
+    decision: deny
+    scope: The architect does not run builds.
+  dev:
+    decision: allow
+    scope: The current feature branch only.
+  qa:
+    decision: allow
+    scope: The branch under review.
+  security:
+    decision: deny
+    scope: Security reviews code, it does not run builds.
+  judge:
+    decision: deny
+    scope: The judge is a decision step, not a tool user.
+errors:
+  - code: TOOL_NOT_CONFIGURED
+    when: package.json has no scripts.build.
+    retryable: false
+    message: No build command configured. Add scripts.build to package.json.
+  - code: BUILD_FAILED
+    when: The build exits with a non-zero code.
+    retryable: false
+    message: Build failed. Read the output, fix the cause, and try again.
+  - code: BUILD_TIMEOUT
+    when: The run takes longer than timeoutSeconds.
+    retryable: true
+    message: Build timed out. Raise timeoutSeconds and try again.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool.
+    retryable: false
+    message: This role may not use this tool.
+examples:
+  - description: QA runs the build on the branch under review.
+    input: {}
+    output:
+      passed: true
+      exitCode: 0
+      stdout: "> build\n> tsc --noEmit && node scripts/build.mjs\n"
+      stderr: ""
+      command: npm run build

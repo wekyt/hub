@@ -8,11 +8,15 @@ Least privilege by role. A tool listed in `tools.json` is available to the syste
 | --- | --- | --- | --- | --- | --- |
 | read_file | yes | yes | yes | yes | yes |
 | write_file | no | yes, architecture documents and design notes only | yes, files listed in the approved architecture only | no | no |
+| edit_file | no | yes, architecture documents and design notes only | yes, files listed in the approved architecture only | no | no |
+| list_files | yes, project files | yes, project files | yes, project files | yes, project files | yes, project files |
 | search_code | yes | yes | yes | yes | yes |
 | run_tests | no | no | yes | yes | no |
 | run_linter | no | no | yes | yes | no |
 | run_checker | no | no | yes | yes | yes |
+| run_build | no | no | yes, the current feature branch only | yes, the branch under review | no |
 | web_search | yes | yes | no | no | yes |
+| fetch_url | yes, public documentation and changelog pages | yes, public documentation and API references | no | no | yes, public advisories and vulnerability pages |
 | git_branch | yes | no | yes | no | no |
 | git_commit | no | no | yes | no | no |
 | git_push | no | no | yes | no | no |

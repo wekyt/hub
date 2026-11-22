@@ -1,6 +1,6 @@
 name: write_file
 title: Write file
-version: 0.2.0
+version: 0.4.0
 kind: write
 toolset: write
 description: >-
@@ -58,14 +58,16 @@ implementation:
   implemented: true
   kind: script
   runtime: node:fs
-  handler: >-
+  handler: ai/tools/handlers/write_file.mjs
+  invoke: node ai/tools/handlers/write_file.mjs
+  authentication: none
+  timeoutSeconds: 30
+  notes: >-
     Resolve the path inside the project root, reject absolute paths and
     paths that escape the root through .. or symlinks, create parent
     directories with fs.mkdirSync(path, {recursive: true}), then write with
     fs.writeFileSync(path, content, 'utf8'). In create mode, fail with
     FILE_EXISTS when the file is already present.
-  authentication: none
-  timeoutSeconds: 30
 effects:
   writes:
     - The file at the given path, created or overwritten.
@@ -109,6 +111,10 @@ errors:
     when: The role is not allowed to write this file, or the scope forbids it.
     retryable: false
     message: This role may not write that file. Ask the orchestrator to delegate it to a role that may.
+  - code: SECRET_PATH
+    when: The path is a secret path (.env, *.pem, *.key, credentials, secret, .ssh, .aws, .gnupg).
+    retryable: false
+    message: Secret paths are off limits for every role.
 examples:
   - description: The dev writes a module listed in the approved architecture.
     input:

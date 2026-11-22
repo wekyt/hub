@@ -10,6 +10,8 @@ tools:
   - merge_pull_request
   - rollback
   - audit_log
+  - fetch_url
+  - list_files
 model: strong
 ---
 

@@ -1,6 +1,6 @@
 name: run_tests
 title: Run tests
-version: 0.2.0
+version: 0.4.0
 kind: test
 toolset: test
 description: >-
@@ -61,6 +61,8 @@ outputs: >-
 implementation:
   implemented: true
   kind: command
+  handler: ai/tools/handlers/run_tests.mjs
+  invoke: node ai/tools/handlers/run_tests.mjs
   argv:
     - npm
     - test
@@ -107,6 +109,10 @@ errors:
     when: The run takes longer than timeoutSeconds.
     retryable: true
     message: Tests timed out. Run a single test file, or raise timeoutSeconds.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool.
+    retryable: false
+    message: This role may not use this tool.
 examples:
   - description: QA runs the whole suite as the objective gate.
     input: {}

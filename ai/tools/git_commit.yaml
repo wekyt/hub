@@ -1,6 +1,6 @@
 name: git_commit
 title: Commit changes
-version: 0.2.0
+version: 0.4.0
 kind: git
 toolset: git
 description: >-
@@ -48,6 +48,8 @@ outputs: >-
 implementation:
   implemented: true
   kind: command
+  handler: ai/tools/handlers/git_commit.mjs
+  invoke: node ai/tools/handlers/git_commit.mjs
   argv:
     - git
     - commit
@@ -95,6 +97,10 @@ errors:
     when: amend is true but the branch has already been pushed.
     retryable: false
     message: Cannot amend after push. Create a new commit instead.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool.
+    retryable: false
+    message: This role may not use this tool.
 examples:
   - description: The dev commits a fix that answers a QA finding.
     input:

@@ -1,14 +1,14 @@
 name: web_search
 title: Web search
-version: 0.2.0
+version: 0.4.0
 kind: search
 toolset: read
 description: >-
   Search the public web for documentation, API references, and known
   vulnerabilities. It is read only and never used to fetch secrets or
-  private data. In v0.2.0 this tool is defined but not implemented: the CLI
-  ships no search provider, so calls return NOT_IMPLEMENTED instead of a
-  faked result. A provider is added in a later version.
+  private data. The default provider is the DuckDuckGo Instant Answer API,
+  which needs no key. When no provider is configured, calls return
+  NOT_IMPLEMENTED instead of a faked result.
 mcp:
   inputSchema:
     $schema: https://json-schema.org/draft/2020-12/schema
@@ -56,20 +56,25 @@ mcp:
     idempotentHint: true
     openWorldHint: true
 outputs: >-
-  In v0.2.0, no results: every call returns the NOT_IMPLEMENTED error,
-  because no search provider is configured. When a provider is added, the
-  output is an object with the query and a list of results (title, URL,
-  snippet), with no page content fetched and no secrets requested.
+  An object with the query and a list of results (title, URL, snippet),
+  with no page content fetched and no secrets requested. When the provider
+  is set to none, every call returns the NOT_IMPLEMENTED error instead of
+  a faked result.
 implementation:
-  implemented: false
+  implemented: true
   kind: api
-  provider: none
-  note: >-
-    No search provider is bundled in v0.2.0. The interface is fixed here
-    so a provider can be added without changing the agents. Until then,
-    the handler returns NOT_IMPLEMENTED and runs no request.
+  handler: ai/tools/handlers/web_search.mjs
+  invoke: node ai/tools/handlers/web_search.mjs
+  method: GET
+  url: https://api.duckduckgo.com/?q={query}&format=json
+  provider: duckduckgo
   authentication: none
   timeoutSeconds: 30
+  notes: >-
+    The default provider is the DuckDuckGo Instant Answer API, which needs
+    no key. Set WEKYT_WEB_SEARCH_PROVIDER to none to disable search: the
+    handler then returns NOT_IMPLEMENTED and runs no request. Set
+    WEKYT_DDG_API_URL to point the provider at another base URL.
 effects:
   writes: []
   deletes: []
@@ -92,14 +97,29 @@ permissions:
     scope: The judge is a decision step, not a tool user.
 errors:
   - code: NOT_IMPLEMENTED
-    when: The tool is called in v0.2.0, which ships no search provider.
+    when: The provider is set to none, so no search provider is configured.
     retryable: false
-    message: Web search has no provider in v0.2.0. Use the harness search capability, or wait for a provider to be added.
+    message: Web search has no provider configured. Set WEKYT_WEB_SEARCH_PROVIDER to duckduckgo, or use the harness search capability.
+  - code: SEARCH_FAILED
+    when: The provider request fails or returns an unreadable response.
+    retryable: true
+    message: Web search request failed. Check the network and try again.
+  - code: SEARCH_TIMEOUT
+    when: The provider takes longer than timeoutSeconds.
+    retryable: true
+    message: Web search timed out. Try a narrower query.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool.
+    retryable: false
+    message: This role may not use this tool.
 examples:
   - description: The architect looks up the current Ink release notes.
     input:
       query: Ink 8 release notes React 19
       maxResults: 5
-    error:
-      code: NOT_IMPLEMENTED
-      message: Web search has no provider in v0.2.0.
+    output:
+      query: Ink 8 release notes React 19
+      results:
+        - title: Ink 8.0.0
+          url: https://github.com/vadimdemedes/ink/releases
+          snippet: Ink 8 adds React 19 support.

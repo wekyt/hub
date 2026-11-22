@@ -8,6 +8,8 @@ tools:
   - run_linter
   - run_checker
   - audit_log
+  - list_files
+  - run_build
 model: balanced
 ---
 

@@ -1,6 +1,6 @@
 name: audit_log
 title: Audit log
-version: 0.2.0
+version: 0.4.0
 kind: safety
 toolset: safety
 description: >-
@@ -76,13 +76,15 @@ implementation:
   implemented: true
   kind: script
   runtime: node:fs
-  handler: >-
+  handler: ai/tools/handlers/audit_log.mjs
+  invoke: node ai/tools/handlers/audit_log.mjs
+  authentication: none
+  timeoutSeconds: 10
+  notes: >-
     Append one JSON line to ai/audit.log with fs.appendFileSync, with
     taskId, actor, action, evidence, details, and an ISO timestamp. Create
     ai/audit.log when it does not exist. Never open the file for writing in
     any other mode, and never truncate it.
-  authentication: none
-  timeoutSeconds: 10
 effects:
   writes:
     - One JSON line appended to ai/audit.log.
@@ -114,6 +116,10 @@ errors:
     when: The action is not one of the six recorded actions.
     retryable: false
     message: Invalid audit action. Use decision, delegation, approval, rejection, merge, or rollback.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool.
+    retryable: false
+    message: This role may not use this tool.
 examples:
   - description: The orchestrator records that all layers agreed to merge.
     input:

@@ -1,6 +1,6 @@
 name: merge_pull_request
 title: Merge pull request
-version: 0.2.0
+version: 0.4.0
 kind: git
 toolset: git
 description: >-
@@ -25,6 +25,21 @@ mcp:
           - squash
           - rebase
         default: merge
+        description: Merge method. The merge step uses merge unless the architecture says otherwise for that project.
+      agreement:
+        type: object
+        description: Agreement of every layer, all true, with QA tests green. When omitted or any layer is false, the merge is refused with LAYERS_NOT_AGREED.
+        properties:
+          architect:
+            type: boolean
+          dev:
+            type: boolean
+          qa:
+            type: boolean
+          qaTestsGreen:
+            type: boolean
+          security:
+            type: boolean
     required:
       - number
     additionalProperties: false
@@ -55,6 +70,8 @@ outputs: >-
 implementation:
   implemented: true
   kind: api
+  handler: ai/tools/handlers/merge_pull_request.mjs
+  invoke: node ai/tools/handlers/merge_pull_request.mjs
   method: PUT
   url: https://api.github.com/repos/{owner}/{repo}/pulls/{number}/merge
   fallback:
@@ -75,6 +92,8 @@ implementation:
     owner and repo come from the project git remote. The API call sends
     merge_method. The merge step always uses a merge commit, never squash
     or rebase, unless the architecture says otherwise for that project.
+    The handler refuses the merge when any layer has not agreed, and when
+    no audit_log entry for this pull request exists before the call.
 effects:
   writes:
     - A merge commit on the main branch.
@@ -117,6 +136,18 @@ errors:
     when: The pull request cannot be merged cleanly.
     retryable: false
     message: Merge conflict. Return the branch to the dev to resolve it.
+  - code: PR_NOT_FOUND
+    when: The pull request number does not exist on the remote.
+    retryable: false
+    message: Pull request not found. Check the number against the open pull requests.
+  - code: NO_GITHUB_REMOTE
+    when: The project has no GitHub remote configured.
+    retryable: false
+    message: No GitHub remote configured. Set the origin remote to a github.com repository first.
+  - code: PERMISSION_DENIED
+    when: The role is not allowed to use this tool.
+    retryable: false
+    message: This role may not use this tool.
 examples:
   - description: The orchestrator merge step merges an approved pull request.
     input:
