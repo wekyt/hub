@@ -204,19 +204,65 @@ export function isBinaryBuffer(buf) {
 }
 
 /**
+ * Resolve a command to its absolute path, trying the Windows executable
+ * suffixes too. Spawning a bare name fails on Windows when only a .cmd shim
+ * exists (CreateProcess appends .exe only, so plain `npm` is never found),
+ * so callers must spawn the resolved path. Returns null when the command
+ * is not on PATH. Mirrors the CLI resolver in cli/src/lib/util.ts.
+ */
+export function resolveCommand(cmd) {
+  const pathEnv = process.env.PATH || '';
+  for (const dir of pathEnv.split(path.delimiter)) {
+    if (!dir) continue;
+    for (const suffix of ['', '.exe', '.cmd']) {
+      try {
+        const candidate = path.join(dir, cmd + suffix);
+        if (fs.statSync(candidate).isFile()) return candidate;
+      } catch {
+        // not here
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Spawn options for a resolved command file. Since the CVE-2024-27980 fix,
+ * Node refuses to spawn .bat/.cmd files on Windows without a shell
+ * (EINVAL): they must run through cmd.exe. .exe files and extensionless
+ * files spawn directly. The platform parameter exists only so the win32
+ * branch is unit-testable on other platforms; callers pass nothing.
+ */
+export function shellOptionFor(file, platform = process.platform) {
+  if (platform === 'win32' && /\.(cmd|bat)$/i.test(file)) return {shell: true};
+  return {};
+}
+
+/**
  * Run a command synchronously with a timeout. Returns
  * {code, stdout, stderr, timedOut, signal}. A missing binary throws
  * INTERNAL_ERROR. A timeout kills the process and reports timedOut.
+ * The command name is resolved on PATH first (see resolveCommand), so
+ * .cmd shims such as npm on Windows are found and run through a shell.
  */
 export function runCommand(argv, {cwd, timeoutMs, maxBuffer = 1024 * 1024, env} = {}) {
+  let file = argv[0];
+  if (!file.includes('/') && !file.includes('\\')) {
+    const resolved = resolveCommand(file);
+    if (!resolved) {
+      throw new ToolError('INTERNAL_ERROR', `Cannot run ${file}: spawnSync ${file} ENOENT`);
+    }
+    file = resolved;
+  }
   let result;
   try {
-    result = spawnSync(argv[0], argv.slice(1), {
+    result = spawnSync(file, argv.slice(1), {
       cwd,
       timeout: timeoutMs,
       maxBuffer,
       encoding: 'utf8',
       env: {...process.env, ...env},
+      ...shellOptionFor(file),
     });
   } catch (e) {
     throw new ToolError('INTERNAL_ERROR', `Cannot run ${argv[0]}: ${e.message}`);
@@ -230,14 +276,9 @@ export function runCommand(argv, {cwd, timeoutMs, maxBuffer = 1024 * 1024, env} 
   return {code: result.status, stdout: result.stdout || '', stderr: result.stderr || '', timedOut: false, signal: result.signal};
 }
 
-/** True when a command exists on PATH (checked by running it with --version). */
+/** True when a command exists on PATH (PATH scan, no execution). */
 export function commandExists(name) {
-  try {
-    const r = spawnSync(name, ['--version'], {stdio: 'ignore', timeout: 10000});
-    return !r.error;
-  } catch {
-    return false;
-  }
+  return resolveCommand(name) !== null;
 }
 
 /** Read package.json in the project root, or null when it is missing or invalid. */

@@ -8,6 +8,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import {resolveCommand, runCommand, shellOptionFor} from '../../ai/tools/handlers/_lib.mjs';
 
 const handlersDir = path.resolve(import.meta.dirname, '..', '..', 'ai', 'tools', 'handlers');
 const GIT_ENV = {
@@ -576,5 +577,83 @@ test('every handler refuses the judge role', async () => {
     assert.equal(res.out.ok, false, `${id} must refuse judge, got: ${res.stdout}`);
     assert.equal(res.out.error.code, 'PERMISSION_DENIED', `${id} must return PERMISSION_DENIED, got: ${res.stdout}`);
   }
+  fs.rmSync(dir, {recursive: true, force: true});
+});
+
+// Windows spawn: bare names that exist only as .cmd shims (npm, pnpm)
+// must resolve on PATH and run through a shell. Regression test for the
+// 0.4.0 publish failure (workflow run #10): spawnSync npm ENOENT.
+
+function withPathDir(dir, fn) {
+  const saved = process.env.PATH;
+  process.env.PATH = `${dir}${path.delimiter}${saved}`;
+  try {
+    return fn();
+  } finally {
+    process.env.PATH = saved;
+  }
+}
+
+function writeShim(dir, name) {
+  const file = path.join(dir, `${name}.cmd`);
+  if (process.platform === 'win32') {
+    fs.writeFileSync(file, '@echo hello-from-shim\r\n');
+  } else {
+    fs.writeFileSync(file, '#!/bin/sh\necho hello-from-shim\n');
+    fs.chmodSync(file, 0o755);
+  }
+  return file;
+}
+
+test('resolveCommand finds .cmd shims on PATH and returns null when absent', async () => {
+  const dir = tmpDir();
+  const shim = writeShim(dir, 'fakecmd');
+  const found = withPathDir(dir, () => resolveCommand('fakecmd'));
+  assert.equal(found, shim);
+  assert.equal(resolveCommand('no-such-command-wekyt-xyz'), null);
+  fs.rmSync(dir, {recursive: true, force: true});
+});
+
+test('shellOptionFor in handlers requires a shell for .cmd/.bat files on win32', () => {
+  assert.deepEqual(shellOptionFor('C:\\tools\\npm.cmd', 'win32'), {shell: true});
+  assert.deepEqual(shellOptionFor('C:\\tools\\tool.BAT', 'win32'), {shell: true});
+  assert.deepEqual(shellOptionFor('C:\\tools\\tool.exe', 'win32'), {});
+  assert.deepEqual(shellOptionFor('C:\\tools\\tool', 'win32'), {});
+  assert.deepEqual(shellOptionFor('/usr/bin/npm.cmd', 'linux'), {});
+  assert.deepEqual(shellOptionFor('/usr/bin/npm', 'linux'), {});
+});
+
+test('runCommand runs a command that exists only as a .cmd shim', async () => {
+  const dir = tmpDir();
+  writeShim(dir, 'shimname');
+  const result = withPathDir(dir, () => runCommand(['shimname'], {timeoutMs: 10000}));
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /hello-from-shim/);
+  assert.throws(
+    () => runCommand(['no-such-command-wekyt-xyz'], {timeoutMs: 5000}),
+    (e) => e.code === 'INTERNAL_ERROR' && /Cannot run no-such-command-wekyt-xyz: spawnSync no-such-command-wekyt-xyz ENOENT/.test(e.message),
+  );
+  fs.rmSync(dir, {recursive: true, force: true});
+});
+
+test('run_tests runs when npm exists only as an npm.cmd shim', {skip: process.platform === 'win32'}, async () => {
+  // On Windows the real npm already is npm.cmd, so the plain run_tests
+  // test above covers the case. Elsewhere, simulate it with a shim that
+  // delegates to the real npm.
+  const realNpm = execFileSync('which', ['npm'], {encoding: 'utf8'}).trim();
+  assert.ok(realNpm, 'npm must be on PATH for this test');
+  const binDir = tmpDir();
+  fs.writeFileSync(path.join(binDir, 'npm.cmd'), `#!/bin/sh\nexec ${realNpm} "$@"\n`);
+  fs.chmodSync(path.join(binDir, 'npm.cmd'), 0o755);
+  const dir = runnerFixture({test: 'node test/a.test.mjs'});
+  fs.mkdirSync(path.join(dir, 'test'));
+  fs.writeFileSync(path.join(dir, 'test', 'a.test.mjs'), "import {test} from 'node:test';\ntest('ok', () => {});\n");
+  const res = await runHandler('run_tests', {}, {
+    WEKYT_PROJECT_ROOT: dir,
+    PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
+  });
+  const out = expectOk(res);
+  assert.equal(out.passed, true);
+  fs.rmSync(binDir, {recursive: true, force: true});
   fs.rmSync(dir, {recursive: true, force: true});
 });
