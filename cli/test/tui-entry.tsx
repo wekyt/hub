@@ -22,7 +22,12 @@ if (mode === 'menu-status') {
   stdin.write('\x1B[B');
   await sleep(100);
   const moved = lastFrame();
-  out.push(`arrow down moves selection: ${moved.includes('❯ Ver estado') ? 'ok' : 'FAIL: ' + JSON.stringify(moved)}`);
+  // The pointer glyph is platform dependent: ink-select-input renders
+  // figures.pointer, which is '❯' when the terminal supports Unicode and
+  // '>' as fallback (for example the Windows runner, which has no
+  // Unicode-capable terminal). Accept either; the selection is what matters.
+  const pointer = '[❯>]';
+  out.push(`arrow down moves selection: ${new RegExp(`${pointer} Ver estado`).test(moved) ? 'ok' : 'FAIL: ' + JSON.stringify(moved)}`);
   stdin.write('\r');
   await sleep(200);
   const status = lastFrame();
@@ -42,7 +47,8 @@ if (mode === 'menu-status') {
   stdin.write('\x1B[B');
   await sleep(100);
   const onInit = lastFrame();
-  out.push(`init menu item: ${onInit.includes('❯ Configurar harness') ? 'ok' : 'FAIL: ' + JSON.stringify(onInit)}`);
+  const pointer = '[❯>]';
+  out.push(`init menu item: ${new RegExp(`${pointer} Configurar harness`).test(onInit) ? 'ok' : 'FAIL: ' + JSON.stringify(onInit)}`);
   stdin.write('\r');
   await sleep(200);
   const done = lastFrame();
