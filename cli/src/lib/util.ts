@@ -73,16 +73,31 @@ export function writeJsonFileAtomic(filePath: string, value: unknown): void {
 }
 
 /**
+ * Executable suffixes tried for a bare command name, in order. On Windows
+ * an extensionless file is not runnable through CreateProcess, and the
+ * Node distribution ships an extensionless `npm` shell script next to the
+ * real npm.cmd shim: the bare name must be tried LAST on win32, or the
+ * resolver returns a file Windows cannot run (workflow run #11:
+ * spawnSync ...\npm ENOENT). On POSIX the bare name is the norm and
+ * stays first. The platform parameter exists only so the win32 branch is
+ * unit-testable on other platforms; callers pass nothing.
+ */
+export function commandSuffixes(platform: NodeJS.Platform = process.platform): string[] {
+  return platform === 'win32' ? ['.exe', '.bat', '.cmd', ''] : ['', '.exe', '.cmd'];
+}
+
+/**
  * Resolve a command to its absolute path, trying the Windows executable
  * suffixes too. Spawning a bare name fails on Windows when only a .cmd shim
  * exists (CreateProcess appends .exe only), so callers must spawn the
  * resolved path. Returns null when the command is not on PATH.
  */
-export function resolveCommand(cmd: string): string | null {
+export function resolveCommand(cmd: string, platform: NodeJS.Platform = process.platform): string | null {
   const pathEnv = process.env.PATH || '';
-  for (const dir of pathEnv.split(path.delimiter)) {
+  const delimiter = platform === 'win32' ? ';' : path.delimiter;
+  for (const dir of pathEnv.split(delimiter)) {
     if (!dir) continue;
-    for (const suffix of ['', '.exe', '.cmd']) {
+    for (const suffix of commandSuffixes(platform)) {
       try {
         const candidate = path.join(dir, cmd + suffix);
         if (fs.statSync(candidate).isFile()) return candidate;

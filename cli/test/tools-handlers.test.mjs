@@ -8,7 +8,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import {resolveCommand, runCommand, shellOptionFor} from '../../ai/tools/handlers/_lib.mjs';
+import {commandSuffixes, resolveCommand, runCommand, shellOptionFor} from '../../ai/tools/handlers/_lib.mjs';
 
 const handlersDir = path.resolve(import.meta.dirname, '..', '..', 'ai', 'tools', 'handlers');
 const GIT_ENV = {
@@ -610,7 +610,64 @@ test('resolveCommand finds .cmd shims on PATH and returns null when absent', asy
   const shim = writeShim(dir, 'fakecmd');
   const found = withPathDir(dir, () => resolveCommand('fakecmd'));
   assert.equal(found, shim);
+  assert.ok(found.endsWith('.cmd'), `resolved path must keep the found suffix: ${found}`);
+  assert.ok(fs.statSync(found).isFile(), 'resolved path must be an existing file');
   assert.equal(resolveCommand('no-such-command-wekyt-xyz'), null);
+  assert.equal(resolveCommand('no-such-command-wekyt-xyz', 'win32'), null);
+  fs.rmSync(dir, {recursive: true, force: true});
+});
+
+test('resolveCommand prefers executable suffixes over a bare file on win32', async () => {
+  // Regression test for the 0.4.0 publish failure (workflow run #11):
+  // the Windows Node distribution ships an extensionless `npm` shell
+  // script next to npm.cmd, and the resolver returned the bare file,
+  // which Windows cannot run (spawnSync ...\npm ENOENT). On win32 the
+  // .cmd shim must win; on POSIX the bare file is the norm and stays first.
+  assert.deepEqual(commandSuffixes('win32'), ['.exe', '.bat', '.cmd', '']);
+  assert.deepEqual(commandSuffixes('linux'), ['', '.exe', '.cmd']);
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'npm'), '#!/bin/sh\necho should-not-run\n');
+  const shim = writeShim(dir, 'npm');
+  // The win32 branch splits PATH on ';', so the fixture dir must be
+  // joined with ';' for that call and with the native delimiter for the
+  // POSIX call; a ':'-joined PATH is one single entry to the win32 branch.
+  const saved = process.env.PATH;
+  try {
+    process.env.PATH = `${dir};${saved}`;
+    const win32 = resolveCommand('npm', 'win32');
+    assert.equal(win32, shim);
+    assert.ok(win32.endsWith('.cmd'), `win32 must resolve to the shim: ${win32}`);
+    assert.equal(resolveCommand('no-such-command-wekyt-xyz', 'win32'), null);
+    process.env.PATH = `${dir}${path.delimiter}${saved}`;
+    const posix = resolveCommand('npm', 'linux');
+    assert.equal(posix, path.join(dir, 'npm'));
+    const current = resolveCommand('npm');
+    if (process.platform === 'win32') assert.equal(current, shim);
+    else assert.equal(current, path.join(dir, 'npm'));
+  } finally {
+    process.env.PATH = saved;
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('runCommand runs the .cmd shim when a bare file shadows it on win32', async () => {
+  // Same shadowed-shim fixture as above, through the real spawn path.
+  // On win32 the .cmd shim must run; elsewhere the bare file is the
+  // native executable form and runs instead.
+  const dir = tmpDir();
+  if (process.platform === 'win32') {
+    fs.writeFileSync(path.join(dir, 'toolname'), '#!/bin/sh\necho wrong-file\n');
+    fs.writeFileSync(path.join(dir, 'toolname.cmd'), '@echo hello-from-shim\r\n');
+  } else {
+    fs.writeFileSync(path.join(dir, 'toolname'), '#!/bin/sh\necho wrong-file\n');
+    fs.chmodSync(path.join(dir, 'toolname'), 0o755);
+    fs.writeFileSync(path.join(dir, 'toolname.cmd'), '#!/bin/sh\necho hello-from-shim\n');
+    fs.chmodSync(path.join(dir, 'toolname.cmd'), 0o755);
+  }
+  const result = withPathDir(dir, () => runCommand(['toolname'], {timeoutMs: 10000}));
+  assert.equal(result.code, 0);
+  if (process.platform === 'win32') assert.match(result.stdout, /hello-from-shim/);
+  else assert.match(result.stdout, /wrong-file/);
   fs.rmSync(dir, {recursive: true, force: true});
 });
 
@@ -636,15 +693,38 @@ test('runCommand runs a command that exists only as a .cmd shim', async () => {
   fs.rmSync(dir, {recursive: true, force: true});
 });
 
-test('run_tests runs when npm exists only as an npm.cmd shim', {skip: process.platform === 'win32'}, async () => {
-  // On Windows the real npm already is npm.cmd, so the plain run_tests
-  // test above covers the case. Elsewhere, simulate it with a shim that
-  // delegates to the real npm.
-  const realNpm = execFileSync('which', ['npm'], {encoding: 'utf8'}).trim();
+function realNpmPath() {
+  // The real npm next to the running node binary on Windows, `which npm`
+  // elsewhere. Never the fixture binDir: the caller prepends that dir to
+  // PATH only in the handler environment.
+  if (process.platform === 'win32') {
+    const nextToNode = path.join(path.dirname(process.execPath), 'npm.cmd');
+    if (fs.existsSync(nextToNode)) return nextToNode;
+    return execFileSync('where', ['npm.cmd'], {encoding: 'utf8'}).trim().split(/\r?\n/)[0];
+  }
+  return execFileSync('which', ['npm'], {encoding: 'utf8'}).trim();
+}
+
+test('run_tests runs when npm exists only as an npm.cmd shim', async () => {
+  // Regression test for the 0.4.0 publish failure (workflow run #11):
+  // the Windows Node distribution ships an extensionless `npm` shell
+  // script next to npm.cmd, and the resolver must pick the shim. The
+  // fixture binDir replicates that: a bare `npm` file plus an npm.cmd
+  // delegating to the real npm. On win32 the bare file is junk text,
+  // like the real toolcache file; elsewhere it must also delegate,
+  // because POSIX resolution returns the bare file first.
+  const realNpm = realNpmPath();
   assert.ok(realNpm, 'npm must be on PATH for this test');
   const binDir = tmpDir();
-  fs.writeFileSync(path.join(binDir, 'npm.cmd'), `#!/bin/sh\nexec ${realNpm} "$@"\n`);
-  fs.chmodSync(path.join(binDir, 'npm.cmd'), 0o755);
+  if (process.platform === 'win32') {
+    fs.writeFileSync(path.join(binDir, 'npm'), '#!/bin/sh\necho should-not-run\n');
+    fs.writeFileSync(path.join(binDir, 'npm.cmd'), `@echo off\r\ncall "${realNpm}" %*\r\nexit /b %errorlevel%\r\n`);
+  } else {
+    fs.writeFileSync(path.join(binDir, 'npm'), `#!/bin/sh\nexec ${realNpm} "$@"\n`);
+    fs.chmodSync(path.join(binDir, 'npm'), 0o755);
+    fs.writeFileSync(path.join(binDir, 'npm.cmd'), `#!/bin/sh\nexec ${realNpm} "$@"\n`);
+    fs.chmodSync(path.join(binDir, 'npm.cmd'), 0o755);
+  }
   const dir = runnerFixture({test: 'node test/a.test.mjs'});
   fs.mkdirSync(path.join(dir, 'test'));
   fs.writeFileSync(path.join(dir, 'test', 'a.test.mjs'), "import {test} from 'node:test';\ntest('ok', () => {});\n");
